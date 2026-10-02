@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>PlexCompatibleServer.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PlexCompatibleServer.Core\PlexCompatibleServer.Core.csproj" />
+    <ProjectReference Include="..\PlexCompatibleServer.Infrastructure\PlexCompatibleServer.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
