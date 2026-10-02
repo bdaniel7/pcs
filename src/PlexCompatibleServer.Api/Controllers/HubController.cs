@@ -169,12 +169,13 @@ public sealed class HubController : ControllerBase
         => PlexResults.Container(this, new XmlMediaContainer { Size = 0, MixedParents = "1" });
 
     /// <summary>
-    /// The detail screen loads this hub for its "More Like This" row. A capture of a working
-    /// session shows the real shape: one populated hub with <c>type="movie"</c>, no
-    /// <c>hubIdentifier</c> at all, <c>context="hub.movie"</c>, <c>size</c> equal to the number of
-    /// items in the row, and library coordinates on the container. Returning a bare container, or a
-    /// hub typed <c>"related"</c> with context <c>"movie"</c> and no rows, leaves the detail screen
-    /// with nothing to render.
+    /// The detail screen loads this hub for its "More Like This" row. The official response to
+    /// <c>/hubs/metadata/826/related?includeMeta=1&amp;wait=1</c> is a single hub carrying
+    /// <c>type="movie"</c>, <c>context="hub.movie.similar"</c>, <c>hubIdentifier="movie.similar"</c>,
+    /// <c>key="/library/metadata/826/similar"</c>, <c>size</c> equal to the row count, and
+    /// <c>hubKey</c> as a comma-joined list of <c>/library/metadata/{id}</c> keys. Only movie items
+    /// trigger this call on the LG client, and it is the last request before the detail screen
+    /// either renders or reports that content could not be loaded.
     /// </summary>
     [HttpGet("/hubs/metadata/{id:int}/related")]
     [Produces("application/xml", "application/json")]
@@ -194,17 +195,33 @@ public sealed class HubController : ControllerBase
             .Take(ResolveLimit())
             .ToList();
 
+        // TEMPORARY DIAGNOSTIC BISECT - delete once the movie detail path is understood.
+        // The movie detail screen is the only caller of this hub (the episode screen never asks
+        // for it) and it is the last request before the screen gives up, so this isolates whether
+        // the failure lives in the hub rows or somewhere else entirely.
+        if (Environment.GetEnvironmentVariable("PCS_BISECT_EMPTY_RELATED") == "1") related = new List<MediaItem>();
+
+        var relatedVideos = related
+            .Select(x => LibraryController.ToVideo(x, includeLibrarySection: true))
+            .ToList();
+
+        // Official rows in this hub carry the same scraped-metadata sections as the detail screen.
+        if (Request.Query.ContainsKey("includeExternalMetadata"))
+        {
+            foreach (var video in relatedVideos) video.EmitEmptyMetadataSections = true;
+        }
+
         var hub = new XmlHub
         {
-            Key = $"/hubs/metadata/{id}/related",
+            Key = $"/library/metadata/{id}/similar",
             HubKey = string.Join(",", related.Select(x => $"/library/metadata/{x.Id}")),
             Title = isMovie ? "More Like This" : "Related Episodes",
             Type = kind,
-            HubIdentifier = null,
-            Context = $"hub.{kind}",
+            HubIdentifier = $"{kind}.similar",
+            Context = $"hub.{kind}.similar",
             Size = related.Count,
             More = candidates.Count - 1 > related.Count ? "1" : "0",
-            Videos = related.Select(x => LibraryController.ToVideo(x, includeLibrarySection: true)).ToList()
+            Videos = relatedVideos
         };
 
         return PlexResults.Container(this, new XmlSectionHubContainer

@@ -32,6 +32,35 @@ public sealed class MetadataController : ControllerBase
 
         var kind = item.Library.Type == LibraryType.Movie ? "movie" : "show";
 
+        // A movie detail screen asks for includeExternalMetadata=1 and then reads the scraped
+        // metadata sections unconditionally. We have none, so send them empty instead of omitting
+        // them: absent sections are what leave that screen reporting "content could not be loaded".
+        var wantsExternalMetadata =
+            Request.Query.ContainsKey("includeExternalMetadata") || Request.Query.ContainsKey("includeMeta");
+
+        var video = LibraryController.ToVideo(item);
+        if (wantsExternalMetadata)
+        {
+            video.EmitEmptyMetadataSections = true;
+            video.Extras = new XmlExtras();
+
+            // Official Plex always states a release date here. We only know the year, so state the
+            // year rather than omitting the field the detail screen reads.
+            if (video.OriginallyAvailableAt.Length == 0 && video.Year.Length > 0)
+            {
+                video.OriginallyAvailableAt = $"{video.Year}-01-01";
+            }
+
+            // TEMPORARY DIAGNOSTIC PROBE - delete once the movie detail path is understood.
+            // Tests whether the detail screen needs non-empty scraped values or only their
+            // presence. These strings are synthetic and are not real metadata.
+            if (video.Summary.Length == 0) video.Summary = "PROBE synthetic plot text.";
+            if (video.Tagline.Length == 0) video.Tagline = "PROBE synthetic tagline.";
+            if (video.ContentRating.Length == 0) video.ContentRating = "PROBE";
+            if (video.AudienceRating.Length == 0) video.AudienceRating = "7.0";
+            if (video.ContentRatingAge.Length == 0) video.ContentRatingAge = "0";
+        }
+
         return PlexResults.Container(this, new XmlMediaContainer
         {
             Size = 1,
@@ -42,7 +71,7 @@ public sealed class MetadataController : ControllerBase
             LibrarySectionUUID = _options.LibraryUuid(item.LibraryId, item.Library.Name, kind),
             MediaTagPrefix = "/system/bundle/media/flags/",
             MediaTagVersion = PlaybackState.MediaTagVersion,
-            Videos = new List<XmlVideo> { LibraryController.ToVideo(item) }
+            Videos = new List<XmlVideo> { video }
         });
     }
 

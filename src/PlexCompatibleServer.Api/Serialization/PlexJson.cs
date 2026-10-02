@@ -32,12 +32,33 @@ public static class PlexJson
     };
 
     // These are 0/1 in the XML dialect but real booleans in JSON.
+    // optimizedForStreaming is deliberately absent: official Plex sends it as an integer there,
+    // and it is the only int/bool type mismatch left in a rich metadata response.
     private static readonly HashSet<string> BooleanAttributes = new()
     {
         "allowSync", "allowCameraUpload", "claimed", "more", "hidden", "refreshing",
         "has64bitOffsets", "watched", "unwatched", "primaryExtra", "hasPremiumPrimaryExtra",
-        "selected", "default", "optimizedForStreaming", "exists", "accessible",
+        "selected", "default", "exists", "accessible",
         "hasScalingMatrix"
+    };
+
+    // Metadata sections a movie detail screen asks for via includeExternalMetadata=1. The client
+    // reads them unconditionally on that path (it explicitly excludes Actor/Country/Producer for
+    // episodes, but not for movies), so omitting them when we have nothing to put in them leaves
+    // the detail screen reporting that content could not be loaded. Sending them empty is honest:
+    // it says "this server has no scraped metadata for this item".
+    private static readonly HashSet<string> EmptyMetadataSections = new(StringComparer.Ordinal)
+    {
+        "Genre", "Director", "Writer", "Role", "Rating", "Country", "Producer", "Review"
+    };
+
+    // Same reasoning for the string-valued scraped fields: an absent key is not the same as an
+    // empty one to a client that reads them unconditionally on the movie detail path.
+    // audienceRating and contentRatingAge are deliberately NOT here: official Plex types them as
+    // float and int, so emitting "" for them would trade a missing key for a type mismatch.
+    private static readonly HashSet<string> EmptyMetadataAttributes = new(StringComparer.Ordinal)
+    {
+        "summary", "tagline", "contentRating", "audienceRatingImage"
     };
 
     // Real Plex quotes these even though they look numeric, so they must not be swept up by the
@@ -54,7 +75,7 @@ public static class PlexJson
     // strings, so "2.35" must reach the client as 2.35.
     private static readonly HashSet<string> NumericValuedAttributes = new(StringComparer.Ordinal)
     {
-        "aspectRatio", "frameRate"
+        "aspectRatio", "frameRate", "audienceRating", "contentRatingAge"
     };
 
     // Stream attributes that only apply to one track kind. Real Plex leaves them out entirely when
@@ -86,7 +107,10 @@ public static class PlexJson
                 var raw = property.GetValue(model);
                 if (raw is null) continue;
                 // Models are non-nullable and default to "", so blank is the "absent" signal.
-                if (raw is string text && text.Length == 0) continue;
+                if (raw is string text && text.Length == 0)
+                {
+                    if (!WantsEmptyMetadataSections(model) || !EmptyMetadataAttributes.Contains(attrName)) continue;
+                }
                 if (type == typeof(XmlStream) && ZeroMeansAbsent.Contains(attrName) && IsZero(raw)) continue;
                 WriteSeparator(sb, ref first);
                 WriteQuoted(sb, attrName);
@@ -110,7 +134,19 @@ public static class PlexJson
                 }
 
                 var elements = items.Cast<object>().Where(x => x is not null).ToList();
-                if (elements.Count == 0) continue;
+                if (elements.Count == 0)
+                {
+                    if (!WantsEmptyMetadataSections(model)) continue;
+
+                    if (EmptyMetadataSections.Contains(elemName))
+                    {
+                        WriteSeparator(sb, ref first);
+                        WriteQuoted(sb, JsonElementName(elemName));
+                        sb.Append(":[");
+                        sb.Append(']');
+                    }
+                    continue;
+                }
 
                 WriteSeparator(sb, ref first);
                 WriteQuoted(sb, JsonElementName(elemName));
@@ -127,6 +163,10 @@ public static class PlexJson
 
         sb.Append('}');
     }
+
+    // True only for the metadata responses built for an includeExternalMetadata=1 request.
+    private static bool WantsEmptyMetadataSections(object model)
+        => model is XmlVideo video && video.EmitEmptyMetadataSections;
 
     // A boxed int does not match a "long l" type pattern, so this cannot be a switch on the boxed
     // value: every numeric arm has to be reached through IConvertible instead.

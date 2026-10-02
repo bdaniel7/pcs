@@ -177,6 +177,7 @@ public sealed class XmlVideo
     [XmlAttribute("studio")] public string Studio { get; set; } = "";
     [XmlAttribute("year")] public string Year { get; set; } = "";
     [XmlAttribute("summary")] public string Summary { get; set; } = "";
+    [XmlAttribute("tagline")] public string Tagline { get; set; } = "";
     [XmlAttribute("librarySectionID")] public string LibrarySectionID { get; set; } = "";
     [XmlAttribute("librarySectionTitle")] public string LibrarySectionTitle { get; set; } = "";
     [XmlAttribute("librarySectionKey")] public string LibrarySectionKey { get; set; } = "";
@@ -216,6 +217,33 @@ public sealed class XmlVideo
     [XmlElement("Role")]
     public List<XmlTag> Roles { get; set; } = new();
 
+    [XmlElement("Rating")]
+    public List<XmlRating> Ratings { get; set; } = new();
+
+    [XmlElement("Country")]
+    public List<XmlTag> Countries { get; set; } = new();
+
+    [XmlElement("Producer")]
+    public List<XmlTag> Producers { get; set; } = new();
+
+    [XmlElement("Review")]
+    public List<XmlTag> Reviews { get; set; } = new();
+
+    /// <summary>
+    /// Present-but-empty extras container. Official Plex emits this whenever the request carried
+    /// includeExtras=1, even with nothing to show.
+    /// </summary>
+    [XmlElement("Extras")]
+    public XmlExtras? Extras { get; set; }
+
+    /// <summary>
+    /// Set when the client asked for external metadata (includeExternalMetadata=1) so that the
+    /// scraped-metadata sections are serialised as empty arrays rather than omitted. Not an XML
+    /// attribute: it steers serialisation only.
+    /// </summary>
+    [XmlIgnore]
+    public bool EmitEmptyMetadataSections { get; set; }
+
     /// <summary>
     /// Source GUIDs. Real Plex emits this array on every metadata item even when the file has no
     /// scraped metadata, so a client reading Guid[0] finds nothing when it is missing.
@@ -234,6 +262,20 @@ public sealed class XmlGuid
 public sealed class XmlTag
 {
     [XmlAttribute("tag")] public string Tag { get; set; } = "";
+}
+
+/// <summary>Score entry, e.g. image="imdb://image.rating" value=6.2 type="audience".</summary>
+public sealed class XmlRating
+{
+    [XmlAttribute("image")] public string Image { get; set; } = "";
+    [XmlAttribute("value")] public string Value { get; set; } = "";
+    [XmlAttribute("type")] public string Type { get; set; } = "";
+}
+
+/// <summary>The extras container, emitted with size=0 when a library has no extra clips.</summary>
+public sealed class XmlExtras
+{
+    [XmlAttribute("size")] public string Size { get; set; } = "0";
 }
 
 /// <summary>Dominant colours the client uses to tint blurred backgrounds behind an item.</summary>

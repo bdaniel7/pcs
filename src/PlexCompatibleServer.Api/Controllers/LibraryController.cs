@@ -154,13 +154,32 @@ public sealed class LibraryController : ControllerBase
         return string.Join('-', new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
     }
 
+    /// <summary>
+    /// A slug identifies one item, and clients key cached detail pages by it. Deriving it from the
+    /// title alone makes two records for the same file collide: the same movie in a Movies library
+    /// and as an episode in a TV Shows library both slugify to the same string, so the second one
+    /// opened overwrites the first one's cached detail page. The discriminator is derived from the
+    /// item's own guid, which already differs between the two records.
+    /// </summary>
+    private static string UniqueSlug(string title, string guid)
+    {
+        var baseSlug = Slugify(title);
+        if (baseSlug.Length == 0) baseSlug = "item";
+
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(guid));
+
+        return $"{baseSlug}-{Convert.ToHexString(hash, 0, 4).ToLowerInvariant()}";
+    }
+
     internal static XmlVideo ToVideo(MediaItem x, bool includeLibrarySection = true)
     {
         var timestamp = x.UpdatedAt.ToUnixTimeSeconds();
         var extension = Path.GetExtension(x.FilePath).TrimStart('.').ToLowerInvariant();
         var container = string.IsNullOrEmpty(x.Container) ? extension : x.Container;
-        var slug = Slugify(x.Title);
         var type = x.Library.Type == LibraryType.Movie ? "movie" : "episode";
+        var guid = $"plex://{type}/{x.Id:x}{Math.Abs(x.Title.GetHashCode()):x8}";
+        var slug = UniqueSlug(x.Title, guid);
         var streams = ReadStreams(x);
 
         var part = new XmlPart
@@ -223,10 +242,10 @@ public sealed class LibraryController : ControllerBase
         {
             RatingKey = x.Id,
             Key = $"/library/metadata/{x.Id}",
-            Guid = $"plex://{type}/{x.Id:x}{Math.Abs(x.Title.GetHashCode()):x8}",
+            Guid = guid,
             Guids =
             {
-                new XmlGuid { Id = $"plex://{type}/{x.Id:x}{Math.Abs(x.Title.GetHashCode()):x8}" }
+                new XmlGuid { Id = guid }
             },
             Slug = slug,
             Type = type,

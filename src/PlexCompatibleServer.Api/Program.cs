@@ -90,6 +90,15 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Plex-Product"] = "PlexCompatibleServer";
     context.Response.Headers["X-Plex-Version"] = serverOptions.Version;
     context.Response.Headers["X-Plex-Device"] = "Server";
+    // Official Plex sends these three on every response and advertises exactly them in
+    // Access-Control-Expose-Headers. Advertising a header the server never sets is worse than not
+    // advertising it, so they have to be present for the CORS declaration to be truthful.
+    // The client identifier is echoed back from the request when the client sends one.
+    var clientIdentifier = context.Request.Headers["X-Plex-Client-Identifier"].FirstOrDefault();
+    context.Response.Headers["X-Plex-Client-Identifier"] =
+        string.IsNullOrEmpty(clientIdentifier) ? serverOptions.MachineIdentifier : clientIdentifier;
+    context.Response.Headers["X-Plex-Machine-Identifier"] = serverOptions.MachineIdentifier;
+    context.Response.Headers["X-Plex-Server-Identifier"] = serverOptions.MachineIdentifier;
     await next();
 });
 
