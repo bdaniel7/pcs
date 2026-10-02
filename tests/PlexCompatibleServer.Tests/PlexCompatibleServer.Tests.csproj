@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PlexCompatibleServer.Core\PlexCompatibleServer.Core.csproj" />
+    <ProjectReference Include="..\..\src\PlexCompatibleServer.Infrastructure\PlexCompatibleServer.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\PlexCompatibleServer.Api\PlexCompatibleServer.Api.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="NUnit" Version="5.0.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" />
+  </ItemGroup>
+</Project>
