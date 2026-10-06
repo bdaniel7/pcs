@@ -181,6 +181,21 @@ public sealed class HubController : ControllerBase
     [Produces("application/xml", "application/json")]
     public async Task<IActionResult> Related(int id, CancellationToken ct)
     {
+        // TEMPORARY DIAGNOSTIC - see OfficialReplay. Replays the official related-hub body so the
+        // movie path is exercised end to end with genuine Plex bytes.
+        if (OfficialReplay.HubEnabled)
+        {
+            var replay = await OfficialReplay.ReadAsync("084");
+            if (replay is not null)
+            {
+                replay = replay
+                    .Replace("/library/metadata/826", $"/library/metadata/{id}")
+                    .Replace("\"ratingKey\":\"826\"", $"\"ratingKey\":\"{id}\"")
+                    .Replace("\"ratingKey\": \"826\"", $"\"ratingKey\": \"{id}\"");
+                return Content(replay, "application/json");
+            }
+        }
+
         var item = await _repo.GetItemAsync(id, ct);
         if (item is null) return NotFound();
 
@@ -195,21 +210,12 @@ public sealed class HubController : ControllerBase
             .Take(ResolveLimit())
             .ToList();
 
-        // TEMPORARY DIAGNOSTIC BISECT - delete once the movie detail path is understood.
-        // The movie detail screen is the only caller of this hub (the episode screen never asks
-        // for it) and it is the last request before the screen gives up, so this isolates whether
-        // the failure lives in the hub rows or somewhere else entirely.
-        if (Environment.GetEnvironmentVariable("PCS_BISECT_EMPTY_RELATED") == "1") related = new List<MediaItem>();
-
         var relatedVideos = related
             .Select(x => LibraryController.ToVideo(x, includeLibrarySection: true))
             .ToList();
 
         // Official rows in this hub carry the same scraped-metadata sections as the detail screen.
-        if (Request.Query.ContainsKey("includeExternalMetadata"))
-        {
-            foreach (var video in relatedVideos) video.EmitEmptyMetadataSections = true;
-        }
+        foreach (var video in relatedVideos) video.EmitEmptyMetadataSections = true;
 
         var hub = new XmlHub
         {

@@ -61,6 +61,13 @@ public static class PlexJson
         "summary", "tagline", "contentRating", "audienceRatingImage"
     };
 
+    // Same reasoning as EmptyMetadataAttributes, but official Plex types these as numbers, so the
+    // value has to be a JSON number. Emitting 0 keeps the field present and correctly typed.
+    private static readonly HashSet<string> ZeroFilledMetadataAttributes = new(StringComparer.Ordinal)
+    {
+        "audienceRating", "contentRatingAge"
+    };
+
     // Real Plex quotes these even though they look numeric, so they must not be swept up by the
     // all-digits heuristic below: "streamIdentifier":"1" and "videoResolution":"720".
     // ratingKey belongs here too: real Plex sends "ratingKey":"826" as a string, and the client
@@ -82,11 +89,18 @@ public static class PlexJson
     // they do not apply - an audio track carries no width/height, a subtitle track no bitDepth - and
     // the models cannot use Nullable<T> because XmlSerializer rejects it on an XmlAttribute. The
     // XML dialect still writes 0; the JSON the client actually parses omits the key.
-    private static readonly HashSet<string> ZeroMeansAbsent = new(StringComparer.Ordinal)
-    {
-        "width", "height", "codedWidth", "codedHeight", "bitDepth", "level", "refFrames",
-        "channels", "samplingRate", "bitrate"
-    };
+private static readonly HashSet<string> ZeroMeansAbsent = new(StringComparer.Ordinal)
+      {
+          "width", "height", "codedWidth", "codedHeight", "bitDepth", "level", "refFrames",
+          "channels", "samplingRate", "bitrate"
+      };
+
+      // Same idea for the container: a zero here means "there is no play queue", not "an empty
+      // one", and official Plex leaves the attributes out in that case.
+      private static readonly HashSet<string> ZeroMeansAbsentContainer = new(StringComparer.Ordinal)
+      {
+          "playQueueSelectedItemOffset", "playQueueTotalCount", "playQueueVersion"
+      };
 
     private static string JsonElementName(string xmlName)
         => JsonElementNames.TryGetValue(xmlName, out var jsonName) ? jsonName : xmlName;
@@ -109,13 +123,34 @@ public static class PlexJson
                 // Models are non-nullable and default to "", so blank is the "absent" signal.
                 if (raw is string text && text.Length == 0)
                 {
-                    if (!WantsEmptyMetadataSections(model) || !EmptyMetadataAttributes.Contains(attrName)) continue;
+                    if (!WantsEmptyMetadataSections(model)) continue;
+
+                    // audienceRating and contentRatingAge are typed as numbers by official Plex, so
+                    // an empty string would trade a missing key for a type mismatch. State a typed
+                    // zero instead: the movie screen draws the rating stars straight from
+                    // audienceRating, and an absent value throws there.
+                    if (ZeroFilledMetadataAttributes.Contains(attrName))
+                    {
+                        WriteSeparator(sb, ref first);
+                        WriteQuoted(sb, attrName);
+                        sb.Append(':');
+                        sb.Append('0');
+                        continue;
+                    }
+
+                    if (!EmptyMetadataAttributes.Contains(attrName)) continue;
                 }
                 if (type == typeof(XmlStream) && ZeroMeansAbsent.Contains(attrName) && IsZero(raw)) continue;
+                // A container that is not a play queue must not claim to be one: official Plex
+                // omits these counters entirely unless a play queue set them. XML cannot express
+                // "absent" for a non-nullable value, so the zero is dropped here instead. Gated on
+                // PlayQueueID because inside a real play queue a zero offset is meaningful.
+                if (type == typeof(XmlMediaContainer) && ZeroMeansAbsentContainer.Contains(attrName) && IsZero(raw)
+                    && string.IsNullOrEmpty(((XmlMediaContainer)model).PlayQueueID)) continue;
                 WriteSeparator(sb, ref first);
                 WriteQuoted(sb, attrName);
                 sb.Append(':');
-                WriteAttributeScalar(sb, attrName, raw);
+                WriteAttributeScalar(sb, attrName, raw, model);
                 continue;
             }
 
@@ -178,9 +213,18 @@ public static class PlexJson
     // surfaces as "content could not be loaded" on the info page even though every request
     // succeeded. The JSON type of each attribute is therefore pinned to what real Plex sends
     // rather than inferred from how the model happens to store it.
-    private static void WriteAttributeScalar(StringBuilder sb, string attrName, object value)
+    private static void WriteAttributeScalar(StringBuilder sb, string attrName, object value, object? model = null)
     {
         var invariant = System.Globalization.CultureInfo.InvariantCulture;
+
+        // optimizedForStreaming is the one attribute official Plex types differently depending on
+        // where it appears: an integer on Media, a boolean on Part. Serializing both as an integer
+        // hands the client a number where it expects a boolean.
+        if (attrName == "optimizedForStreaming" && model is XmlPart)
+        {
+            WriteBoolean(sb, value);
+            return;
+        }
 
         if (StringValuedAttributes.Contains(attrName))
         {
@@ -190,12 +234,7 @@ public static class PlexJson
 
         if (BooleanAttributes.Contains(attrName))
         {
-            if (value is bool actual) { sb.Append(actual ? "true" : "false"); return; }
-            if (value is string flag && (flag == "0" || flag == "1"))
-            {
-                sb.Append(flag == "1" ? "true" : "false");
-                return;
-            }
+            if (WriteBoolean(sb, value)) return;
         }
 
         if (NumericValuedAttributes.Contains(attrName))
@@ -209,6 +248,18 @@ public static class PlexJson
         }
 
         WriteScalar(sb, value);
+    }
+
+    /// <summary>Writes a 0/1 string or a bool as a JSON boolean. Returns false if unrecognised.</summary>
+    private static bool WriteBoolean(StringBuilder sb, object value)
+    {
+        if (value is bool actual) { sb.Append(actual ? "true" : "false"); return true; }
+        if (value is string flag && (flag == "0" || flag == "1"))
+        {
+            sb.Append(flag == "1" ? "true" : "false");
+            return true;
+        }
+        return false;
     }
 
     private static void WriteScalar(StringBuilder sb, object value)

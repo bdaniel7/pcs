@@ -12,8 +12,9 @@ namespace PlexCompatibleServer.Tests;
 /// <summary>
 /// Guards the two response shapes a working Plex-for-LG detail screen depends on, both read out of a
 /// capture of the real server while that client played a movie:
-///   /hubs/metadata/{id}/related -> one populated hub, type="movie", context="hub.movie",
-///                                 no hubIdentifier, size = number of rows, allowSync as a boolean
+///   /hubs/metadata/{id}/related -> one populated hub, type="movie", context="hub.movie.similar",
+///                                 hubIdentifier="movie.similar", key="/library/metadata/{id}/similar",
+///                                 size = number of rows, allowSync as a boolean
 ///   /photo/:/transcode            -> the slot named in the url (/art/ vs /thumb/)
 /// </summary>
 [TestFixture]
@@ -55,14 +56,20 @@ public class DetailScreenShapeTests
 
         var hub = container.GetProperty("Hub").EnumerateArray().Single();
 
-        // A hub typed "related" with context "movie" is not what the detail screen reads.
+        // Official: type="movie", context="hub.movie.similar", hubIdentifier="movie.similar",
+        // key="/library/metadata/{id}/similar".
         Assert.That(hub.GetProperty("type").GetString(), Is.EqualTo("movie"));
-        Assert.That(hub.GetProperty("context").GetString(), Is.EqualTo("hub.movie"));
-        Assert.That(hub.TryGetProperty("identifier", out _), Is.False);
+        Assert.That(hub.GetProperty("context").GetString(), Is.EqualTo("hub.movie.similar"));
+        Assert.That(hub.GetProperty("hubIdentifier").GetString(), Is.EqualTo("movie.similar"));
+        Assert.That(hub.GetProperty("key").GetString(), Is.EqualTo("/library/metadata/8/similar"));
 
         var rows = hub.GetProperty("Metadata").EnumerateArray().ToList();
         Assert.That(hub.GetProperty("size").GetInt32(), Is.EqualTo(rows.Count));
         Assert.That(rows, Is.Not.Empty);
+
+        // hubKey is a comma-joined list of the row keys, in row order.
+        Assert.That(hub.GetProperty("hubKey").GetString(),
+            Is.EqualTo(string.Join(",", rows.Select(x => "/library/metadata/" + x.GetProperty("ratingKey").GetString()))));
 
         // The movie being viewed is not its own recommendation.
         Assert.That(rows.Any(x => x.GetProperty("ratingKey").GetString() == "8"), Is.False);

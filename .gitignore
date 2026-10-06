@@ -6,5 +6,5 @@ obj/
 *.db
 *.db-shm
 *.db-wal
-Media/
+/Media/
 .vscode/

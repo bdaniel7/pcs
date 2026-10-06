@@ -6,4 +6,7 @@
     <ProjectReference Include="..\PlexCompatibleServer.Core\PlexCompatibleServer.Core.csproj" />
     <ProjectReference Include="..\PlexCompatibleServer.Infrastructure\PlexCompatibleServer.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PlexCompatibleServer.Tests" />
+  </ItemGroup>
 </Project>

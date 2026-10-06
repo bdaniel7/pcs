@@ -14,12 +14,18 @@ public sealed class LibraryController : ControllerBase
     private readonly IMediaRepository _repo;
     private readonly MediaScanTrigger _trigger;
     private readonly ServerOptions _options;
+    private readonly StreamSelectionStore _selections;
 
-    public LibraryController(IMediaRepository repo, MediaScanTrigger trigger, ServerOptions options)
+    public LibraryController(
+        IMediaRepository repo,
+        MediaScanTrigger trigger,
+        ServerOptions options,
+        StreamSelectionStore selections)
     {
         _repo = repo;
         _trigger = trigger;
         _options = options;
+        _selections = selections;
     }
 
     [HttpGet("/library")]
@@ -77,7 +83,7 @@ public sealed class LibraryController : ControllerBase
             Size = items.Count,
             LibrarySectionID = library.Id.ToString(),
             LibrarySectionTitle = library.Name,
-            Videos = items.Select(x => ToVideo(x)).ToList()
+            Videos = items.Select(x => ToVideo(x, selections: _selections)).ToList()
         };
         return PlexResults.Container(this, result);
     }
@@ -103,7 +109,7 @@ public sealed class LibraryController : ControllerBase
             Size = recent.Count,
             MixedParents = "1",
             TotalSize = recent.Count.ToString(),
-            Videos = recent.Select(x => ToVideo(x)).ToList()
+            Videos = recent.Select(x => ToVideo(x, selections: _selections)).ToList()
         });
     }
 
@@ -127,7 +133,7 @@ public sealed class LibraryController : ControllerBase
             LibrarySectionTitle = library.Name,
             MixedParents = "1",
             TotalSize = recent.Count.ToString(),
-            Videos = recent.Select(x => ToVideo(x)).ToList()
+            Videos = recent.Select(x => ToVideo(x, selections: _selections)).ToList()
         });
     }
 
@@ -172,7 +178,10 @@ public sealed class LibraryController : ControllerBase
         return $"{baseSlug}-{Convert.ToHexString(hash, 0, 4).ToLowerInvariant()}";
     }
 
-    internal static XmlVideo ToVideo(MediaItem x, bool includeLibrarySection = true)
+    internal static XmlVideo ToVideo(
+        MediaItem x,
+        bool includeLibrarySection = true,
+        StreamSelectionStore? selections = null)
     {
         var timestamp = x.UpdatedAt.ToUnixTimeSeconds();
         var extension = Path.GetExtension(x.FilePath).TrimStart('.').ToLowerInvariant();
@@ -180,7 +189,7 @@ public sealed class LibraryController : ControllerBase
         var type = x.Library.Type == LibraryType.Movie ? "movie" : "episode";
         var guid = $"plex://{type}/{x.Id:x}{Math.Abs(x.Title.GetHashCode()):x8}";
         var slug = UniqueSlug(x.Title, guid);
-        var streams = ReadStreams(x);
+        var streams = ReadStreams(x, selections);
 
         var part = new XmlPart
         {
@@ -194,7 +203,7 @@ public sealed class LibraryController : ControllerBase
             DeepAnalysisVersion = 6,
             AudioProfile = x.AudioCodec == "aac" ? "lc" : "",
             VideoProfile = (x.VideoProfile ?? "").ToLowerInvariant(),
-            OptimizedForStreaming = "0",
+            OptimizedForStreaming = "1",
             Selected = "1",
             // Real Plex states this on the part as well as the media element. The JSON serializer
             // treats an unset (empty) attribute as absent, so it has to be set explicitly here.
@@ -228,7 +237,7 @@ public sealed class LibraryController : ControllerBase
             VideoFrameRate = FrameRate(x.FrameRate),
             VideoProfile = (x.VideoProfile ?? "").ToLowerInvariant(),
             Container = container,
-            OptimizedForStreaming = "0",
+            OptimizedForStreaming = "1",
             Selected = "1",
             // Real Plex reports false here even for libraries holding large files, so the client
             // clearly does not gate on it. Matching it keeps the JSON shape identical.
@@ -272,28 +281,39 @@ public sealed class LibraryController : ControllerBase
         };
     }
 
-    private static List<XmlStream> ReadStreams(MediaItem x)
+    private static List<XmlStream> ReadStreams(MediaItem x, StreamSelectionStore? selections)
     {
-        if (string.IsNullOrWhiteSpace(x.StreamsJson)) return [];
+        // The viewer's own pick, written through PUT /library/parts/{id}. The client re-reads
+        // this list right after choosing and looks for the track flagged selected, so it is the
+        // only thing that ever flags a subtitle (or moves the audio choice off the first track).
+        var (selectedAudio, selectedSubtitle) = selections?.Get(x.Id) ?? (0, 0);
 
-        List<MediaStreamInfo>? parsed;
-        try
-        {
-            parsed = System.Text.Json.JsonSerializer.Deserialize<List<MediaStreamInfo>>(x.StreamsJson);
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return [];
-        }
+        // An unprobed file still gets its sidecar tracks: the video/audio detail ffprobe would
+        // have supplied is missing, but the .srt files on disk are discoverable on their own.
+        List<MediaStreamInfo> parsed = [];
 
-        if (parsed is null) return [];
+        if (!string.IsNullOrWhiteSpace(x.StreamsJson))
+        {
+            try
+            {
+                parsed = System.Text.Json.JsonSerializer.Deserialize<List<MediaStreamInfo>>(x.StreamsJson) ?? [];
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                parsed = [];
+            }
+        }
 
         var result = new List<XmlStream>();
         var index = 0;
         var identifier = 1;
+        var perKind = new Dictionary<int, int>();
 
         foreach (var s in parsed)
         {
+            var order = perKind.GetValueOrDefault(s.StreamType);
+            perKind[s.StreamType] = order + 1;
+
             var stream = new XmlStream
             {
                 // Real Plex gives every stream a server-assigned id; deterministic from the item and
@@ -311,13 +331,18 @@ public sealed class LibraryController : ControllerBase
                 SamplingRate = s.SamplingRate ?? 0,
                 FrameRate = StreamFrameRate(s.FrameRate ?? 0),
                 Location = s.Location ?? "",
-                Language = s.Language ?? "",
+                // The menu shows language, not codes: a track tagged "eng" has to read as
+                // "English", and languageTag has to be the two-letter form clients group by.
+                Language = SidecarSubtitles.DisplayName(s.Language, s.LanguageCode),
                 LanguageCode = s.LanguageCode ?? "",
-                LanguageTag = s.LanguageCode ?? "",
+                LanguageTag = SidecarSubtitles.LanguageTag(s.LanguageCode),
                 StreamIdentifier = (identifier++).ToString(),
                 RequiredBandwidths = Bandwidths(s.Bitrate is > 0 ? s.Bitrate.Value / 1000 : 0),
-                Default = index == 1 ? "1" : "",
-                Selected = "1"
+                // One video and one audio track are flagged as the pair in use. A subtitle is
+                // never pre-selected: a selected track makes the client load it during startup,
+                // and a track it cannot load turns into a burn-in request this server cannot serve.
+                Default = order == 0 && s.StreamType != 3 ? "1" : "",
+                Selected = order == 0 && s.StreamType != 3 ? "1" : ""
             };
 
             switch (s.StreamType)
@@ -355,16 +380,86 @@ public sealed class LibraryController : ControllerBase
                     break;
 
                 case 3:
-                    stream.Format = s.Codec == "subrip" ? "srt" : s.Codec ?? "";
-                    stream.DisplayTitle = !string.IsNullOrEmpty(s.Language) ? s.Language : s.Codec ?? "";
-                    stream.ExtendedDisplayTitle = $"{(!string.IsNullOrEmpty(s.Language) ? s.Language : s.Codec ?? "")} ({stream.Format.ToUpperInvariant()} External)";
-                    stream.Location = "sidecar-subs";
-                    // Sidecar subtitles are separate files, so Plex serves them from /library/streams.
-                    stream.Key = $"/library/streams/{stream.StreamIdentifier}";
+                    // A stored sidecar marker only ever came from an older scan: external tracks
+                    // are rebuilt from the directory listing below, one per .srt file, so the
+                    // stale row is dropped rather than published twice.
+                    if (string.Equals(s.Location, "sidecar-subs", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (stream.Language.Length == 0) stream.Language = s.Codec ?? "";
+
+                    if (EmbeddedSubtitles.IsTextCodec(s.Codec))
+                    {
+                        // Text inside the container is published exactly like an external track
+                        // and extracted to SRT when the client fetches the key: a direct-playing
+                        // client cannot read a subtitle track out of the file itself, and a
+                        // track with no key leaves it with nothing to load at all.
+                        stream.Codec = "srt";
+                        stream.Format = "srt";
+                        stream.Location = "sidecar-subs";
+                        stream.Key = $"/library/streams/{stream.Id}";
+                        stream.DisplayTitle = stream.Language;
+                        stream.ExtendedDisplayTitle = $"{stream.Language} (SRT Internal)";
+                    }
+                    else
+                    {
+                        // Bitmap subtitles carry no text to extract; they stay inside the
+                        // container with no key, exactly as real Plex publishes them.
+                        stream.Location = "direct";
+                        stream.Format = s.Codec ?? "";
+                        stream.DisplayTitle = stream.Language;
+                        stream.ExtendedDisplayTitle =
+                            $"{stream.Language} ({stream.Format.ToUpperInvariant()} Internal)";
+                    }
                     break;
             }
 
+            if (s.StreamType == 2 && selectedAudio != 0)
+                stream.Selected = stream.Id == selectedAudio.ToString() ? "1" : "";
+            else if (s.StreamType == 3)
+                stream.Selected = stream.Id == selectedSubtitle.ToString() ? "1" : "";
+
             result.Add(stream);
+        }
+
+        // One track per external .srt file next to the video. The stream id carries the item id
+        // in its high digits, which is how /library/streams/{id} finds the file again when the
+        // client fetches the track through the key published here.
+        var defaulted = false;
+        foreach (var sub in SidecarSubtitles.Find(x.FilePath))
+        {
+            var sidecarId = x.Id * 1000 + result.Count;
+            var title = sub.Forced ? $"{sub.Language} (Forced)"
+                : sub.Caption ? $"{sub.Language} (SDH)"
+                : sub.Language;
+
+            var sidecar = new XmlStream
+            {
+                Id = sidecarId.ToString(),
+                StreamType = 3,
+                Index = result.Count,
+                // Real Plex reports external SRT files as codec="srt". The ffprobe spelling
+                // "subrip" is what a client checks against its supported-codec list, and a
+                // mismatch there is what leaves a selected track never fetched at all.
+                Codec = "srt",
+                Format = "srt",
+                Location = "sidecar-subs",
+                Key = $"/library/streams/{sidecarId}",
+                StreamIdentifier = (identifier++).ToString(),
+                Language = sub.Language,
+                LanguageCode = sub.LanguageCode,
+                LanguageTag = sub.LanguageTag,
+                DisplayTitle = title,
+                ExtendedDisplayTitle = $"{title} (SRT External)",
+                // Marked as the track the menu opens on, but not selected: a selected subtitle
+                // makes the client load it during startup, and real Plex only selects one the
+                // viewer has actually chosen - which is exactly what the selection store records.
+                Default = !sub.Forced && !defaulted ? "1" : "",
+                Selected = sidecarId == selectedSubtitle ? "1" : ""
+            };
+
+            defaulted |= sidecar.Default == "1";
+            result.Add(sidecar);
         }
 
         return result;

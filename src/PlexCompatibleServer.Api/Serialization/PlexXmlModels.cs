@@ -92,6 +92,7 @@ public sealed class XmlMediaContainer
     [XmlAttribute("librarySectionUUID")] public string LibrarySectionUUID { get; set; } = "";
     [XmlAttribute("mixedParents")] public string MixedParents { get; set; } = "";
     [XmlAttribute("totalSize")] public string TotalSize { get; set; } = "";
+    [XmlAttribute("offset")] public int Offset { get; set; }
 
     [XmlAttribute("error")] public string Error { get; set; } = "";
     [XmlAttribute("message")] public string Message { get; set; } = "";
@@ -111,6 +112,8 @@ public sealed class XmlMediaContainer
     [XmlAttribute("playQueueID")] public string PlayQueueID { get; set; } = "";
     [XmlAttribute("playQueueSelectedItemID")] public string PlayQueueSelectedItemID { get; set; } = "";
     [XmlAttribute("playQueueSelectedItemPlayer")] public string PlayQueueSelectedItemPlayer { get; set; } = "";
+    // Play-queue counters. Official Plex omits these from a plain item response, so PlexJson drops
+    // them when they are zero - see ZeroMeansAbsentContainer in PlexJson.
     [XmlAttribute("playQueueSelectedItemOffset")] public long PlayQueueSelectedItemOffset { get; set; }
     [XmlAttribute("playQueueSelectedMetadataItemID")] public string PlayQueueSelectedMetadataItemID { get; set; } = "";
     [XmlAttribute("playQueueShuffled")] public string PlayQueueShuffled { get; set; } = "";
@@ -229,6 +232,9 @@ public sealed class XmlVideo
     [XmlElement("Review")]
     public List<XmlTag> Reviews { get; set; } = new();
 
+    [XmlElement("CommonSenseMedia")]
+    public List<XmlCommonSenseMedia> CommonSenseMedia { get; set; } = new();
+
     /// <summary>
     /// Present-but-empty extras container. Official Plex emits this whenever the request carried
     /// includeExtras=1, even with nothing to show.
@@ -259,10 +265,15 @@ public sealed class XmlGuid
 }
 
 /// <summary>Tag-shaped child element used by Plex for genres, directors, writers and roles.</summary>
-public sealed class XmlTag
-{
-    [XmlAttribute("tag")] public string Tag { get; set; } = "";
-}
+  public sealed class XmlTag
+  {
+      [XmlAttribute("id")] public string Id { get; set; } = "";
+      [XmlAttribute("filter")] public string Filter { get; set; } = "";
+      [XmlAttribute("tag")] public string Tag { get; set; } = "";
+      [XmlAttribute("tagKey")] public string? TagKey { get; set; }
+      [XmlAttribute("thumb")] public string? Thumb { get; set; }
+      [XmlAttribute("role")] public string? Role { get; set; }
+  }
 
 /// <summary>Score entry, e.g. image="imdb://image.rating" value=6.2 type="audience".</summary>
 public sealed class XmlRating
@@ -285,6 +296,26 @@ public sealed class XmlUltraBlurColors
     [XmlAttribute("topRight")] public string TopRight { get; set; } = "";
     [XmlAttribute("bottomRight")] public string BottomRight { get; set; } = "";
     [XmlAttribute("bottomLeft")] public string BottomLeft { get; set; } = "";
+}
+
+/// <summary>
+/// The Common Sense Media age-rating advisory a scraped agent attaches to an item, e.g.
+/// oneLiner="Intense, bloody, ..." with AgeRating=[{type:"official", rating:2, age:14}].
+/// </summary>
+public sealed class XmlCommonSenseMedia
+{
+    [XmlAttribute("id")] public string Id { get; set; } = "";
+    [XmlAttribute("oneLiner")] public string OneLiner { get; set; } = "";
+
+    [XmlElement("AgeRating")]
+    public List<XmlAgeRating> AgeRatings { get; set; } = new();
+}
+
+public sealed class XmlAgeRating
+{
+    [XmlAttribute("type")] public string Type { get; set; } = "";
+    [XmlAttribute("rating")] public int Rating { get; set; }
+    [XmlAttribute("age")] public int Age { get; set; }
 }
 
 public sealed class XmlImage

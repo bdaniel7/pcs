@@ -50,6 +50,9 @@ var serverOptions = builder.Configuration.GetSection("Server").Get<ServerOptions
 builder.Services.AddSingleton(serverOptions);
 builder.Services.AddSingleton<MediaScanTrigger>();
 builder.Services.AddSingleton<PlaybackState>();
+// The viewer's audio/subtitle pick: written by PUT /library/parts/{id} and read back by every
+// response that publishes a stream list, so it has to outlive a single request.
+builder.Services.AddSingleton<StreamSelectionStore>();
 builder.Services.AddHostedService<MediaScanHostedService>();
 builder.Services.AddControllers();
 
@@ -110,8 +113,9 @@ if (app.Configuration.GetValue<bool>("Diagnostics:LogRequests"))
         var accept = context.Request.Headers.Accept.ToString();
         var target = context.Request.Path + context.Request.QueryString;
 
-        // Truncated: media URLs can carry very long token/opaque values.
-        if (target.Length > 500) target = target[..500] + "...";
+        // Truncated, but far enough out that the meaningful parameters (path, subtitles,
+        // session) past the long X-Plex-Client-Profile-Extra blob stay visible.
+        if (target.Length > 4000) target = target[..4000] + "...";
 
         app.Logger.LogInformation(
             "REQ {Method} {Target} from={Remote} accept={Accept}",

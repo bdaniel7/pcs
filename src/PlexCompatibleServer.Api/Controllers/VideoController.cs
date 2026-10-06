@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using PlexCompatibleServer.Api.Serialization;
 using PlexCompatibleServer.Core.Interfaces;
 using PlexCompatibleServer.Core.Models;
+using PlexCompatibleServer.Infrastructure.Media;
 
 namespace PlexCompatibleServer.Api.Controllers;
 
@@ -10,8 +11,13 @@ namespace PlexCompatibleServer.Api.Controllers;
 public sealed class VideoController : ControllerBase
 {
     private readonly IPlaybackService _playback;
+    private readonly StreamSelectionStore _selections;
 
-    public VideoController(IPlaybackService playback) => _playback = playback;
+    public VideoController(IPlaybackService playback, StreamSelectionStore selections)
+    {
+        _playback = playback;
+        _selections = selections;
+    }
 
     internal const string MediaTagPrefix = "/system/bundle/media/flags/";
 
@@ -73,13 +79,52 @@ public sealed class VideoController : ControllerBase
     }
 
     /// <summary>
+    /// How a viewer picks a track: the client pauses, PUTs the stream id it wants, then re-reads
+    /// metadata for the track flagged selected and fetches that one's key. An unimplemented route
+    /// answering 404 here makes the client abandon the choice and carry on with no subtitle at
+    /// all, which is what the TV was doing. The real server persists the pair and answers with an
+    /// empty container; a stream that does not belong to the part is a 400.
+    /// </summary>
+    [HttpPut("/library/parts/{partId:int}")]
+    public async Task<IActionResult> SetStreamSelection(
+        int partId,
+        int? audioStreamId = null,
+        int? subtitleStreamId = null,
+        CancellationToken ct = default)
+    {
+        var item = await _playback.GetMediaAsync(partId, ct);
+        if (item is null)
+            return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
+
+        var streams = LibraryController.ToVideo(item, selections: _selections)
+            .Media[0].Parts[0].Streams;
+
+        // 0 is the documented way of saying "no subtitle" and always passes; anything else has to
+        // name a stream this part actually publishes.
+        if (audioStreamId is > 0 &&
+            !streams.Any(s => s.StreamType == 2 && s.Id == audioStreamId.ToString()))
+            return PlexResults.Error(this, HttpStatusCode.BadRequest, "audio stream not found");
+
+        if (subtitleStreamId is > 0 &&
+            !streams.Any(s => s.StreamType == 3 && s.Id == subtitleStreamId.ToString()))
+            return PlexResults.Error(this, HttpStatusCode.BadRequest, "subtitle stream not found");
+
+        _selections.Set(partId, audioStreamId, subtitleStreamId);
+        return PlexResults.Empty(this);
+    }
+
+    /// <summary>
     /// The client asks this before it will play anything. Plex answers with a machine decision code
     /// plus the full media/stream layout, and the TV reads the per-Part "decision" attribute to decide
     /// whether to fetch the file as-is or start a transcode session.
     /// There is no transcoder here, so every playable file is offered as a direct play.
     /// </summary>
     [HttpGet("/video/:/transcode/universal/decision")]
-    public async Task<IActionResult> Decision(string path = "", CancellationToken ct = default)
+    public async Task<IActionResult> Decision(
+        string path = "",
+        int? audioStreamId = null,
+        int? subtitleStreamId = null,
+        CancellationToken ct = default)
     {
         if (!TryResolvePath(path, out var ratingKey))
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
@@ -88,7 +133,7 @@ public sealed class VideoController : ControllerBase
         if (item is null)
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
 
-        var video = LibraryController.ToVideo(item);
+        var video = LibraryController.ToVideo(item, selections: _selections);
         foreach (var media in video.Media)
         {
             media.Selected = "1";
@@ -101,6 +146,16 @@ public sealed class VideoController : ControllerBase
                 part.Selected = "1";
                 part.Has64bitOffsets = "0";
                 part.OptimizedForStreaming = "1";
+
+                // The decision echoes back the session the client just asked for: a track it
+                // named as its audio or subtitle comes back flagged as the one in use, the way
+                // the real server answers a "subtitles=stream" request. Metadata stays untouched
+                // (no track pre-selected for anyone else).
+                foreach (var stream in part.Streams)
+                {
+                    if (audioStreamId is int audio && stream.Id == audio.ToString()) stream.Selected = "1";
+                    else if (subtitleStreamId is int sub && stream.Id == sub.ToString()) stream.Selected = "1";
+                }
             }
         }
 
@@ -124,6 +179,30 @@ public sealed class VideoController : ControllerBase
     }
 
     /// <summary>
+    /// How a direct-playing client actually receives a subtitle during playback. Captured from the
+    /// real server for this exact TV: the response body is the plain SRT text, nothing else. The
+    /// query names the target (path/mediaIndex/partIndex/subtitles=sidecar) but carries no stream
+    /// id, so the answer is whatever the viewer last chose for that part - the selection stored by
+    /// the PUT above. With no choice made there is no subtitle to send, and an empty 200 is what
+    /// the client tolerates; a 404 here is the fetch failing and the subtitle silently never shows.
+    /// </summary>
+    [HttpGet("/subtitles/:/transcode/universal/start")]
+    public async Task<IActionResult> SubtitleTranscodeStart(string path = "", CancellationToken ct = default)
+    {
+        if (!TryResolvePath(path, out var ratingKey))
+            return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
+
+        var item = await _playback.GetMediaAsync(ratingKey, ct);
+        if (item is null)
+            return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
+
+        var selectedSubtitle = _selections.Get(ratingKey).Subtitle;
+        if (selectedSubtitle <= 0) return EmptySubtitle();
+
+        return await GetSubtitle(selectedSubtitle, ratingKey, ct);
+    }
+
+    /// <summary>
     /// Only reached when the client decides to transcode. Nothing is implemented, but returning a
     /// clean 501 with an explanation is better than a 404 the client cannot interpret.
     /// </summary>
@@ -133,15 +212,88 @@ public sealed class VideoController : ControllerBase
             "Transcoding is not implemented. Direct play is currently supported.");
 
     /// <summary>
-    /// Subtitle burn-in/transcode entry point. The capture shows the real server answering with an
-    /// empty text/plain body when the selected file has no transcode-worthy subtitle track, so an
-    /// empty 200 is what keeps the client from treating subtitles as a failure.
+    /// Serves an external subtitle file. The real server answers a request for a track it has no
+    /// bytes for with an empty text/plain body rather than a 404, and that difference matters:
+    /// a 404 here surfaces as a playback error on the client.
     /// </summary>
-    [HttpGet("/subtitles/:/transcode/universal/start")]
-    public IActionResult SubtitleStart()
+    [HttpGet("/library/streams/{id:int}")]
+    public Task<IActionResult> StreamFile(int id, CancellationToken ct)
     {
-        Response.Headers.ContentType = "text/plain; charset=utf-8";
-        return new ContentResult { Content = "", ContentType = "text/plain; charset=utf-8" };
+        return GetSubtitle(id, 0, ct);
+    }
+
+    [HttpGet("/library/parts/{partId:int}/subtitles/{streamId:int}")]
+    [HttpGet("/library/parts/{partId:int}/subtitles/{streamId:int}.srt")]
+    public Task<IActionResult> StreamFileAlt(int partId, int streamId, CancellationToken ct)
+    {
+        return GetSubtitle(streamId, partId, ct);
+    }
+
+    private async Task<IActionResult> GetSubtitle(int streamId, int partId, CancellationToken ct)
+    {
+        // The part id is the item id, so it is the most trustworthy handle on the request. A
+        // stream id only carries one when it was minted by this server as itemId * 1000 + index.
+        MediaItem? media = null;
+        if (partId > 0) media = await _playback.GetMediaAsync(partId, ct);
+        if (media is null && streamId >= 1000) media = await _playback.GetMediaAsync(streamId / 1000, ct);
+        if (media is null) media = await _playback.GetMediaAsync(streamId, ct);
+        if (media is null || !System.IO.File.Exists(media.FilePath)) return NotFound();
+
+        var probed = ProbedStreams(media);
+        var sidecars = SidecarSubtitles.Find(media.FilePath);
+
+        // Sidecar tracks are published after every probed track, so a stream id that decodes
+        // past them addresses a sidecar by position - which is how the right .srt is picked when
+        // a video has more than one.
+        var index = streamId % 1000;
+        var sidecarIndex = index - probed.Count;
+        if (sidecarIndex >= 0 && sidecarIndex < sidecars.Count)
+            return ServeSubtitle(sidecars[sidecarIndex].FilePath);
+
+        // The request addresses a track that lives inside the container. Its text is pulled out
+        // to SRT first, because a direct-playing client cannot read a subtitle track out of the
+        // file itself. When there is no text to extract the answer is an empty body, not an
+        // error: a 404 here surfaces as a playback error on the client.
+        if (index < probed.Count && probed[index].StreamType == 3)
+        {
+            var track = probed[index];
+            var position = 0;
+            for (var i = 0; i < index; i++)
+                if (probed[i].StreamType == 3) position++;
+
+            var extracted = await EmbeddedSubtitles.ExtractAsync(media.FilePath, position, track.Codec, ct);
+            return extracted is null ? EmptySubtitle() : ServeSubtitle(extracted);
+        }
+
+        // An id that does not decode to a sidecar slot still came from a client asking for a
+        // subtitle, so fall back to the first one rather than failing the playback.
+        if (sidecars.Count > 0)
+            return ServeSubtitle(sidecars[0].FilePath);
+
+        return index <= probed.Count ? EmptySubtitle() : NotFound();
+    }
+
+    private IActionResult ServeSubtitle(string path)
+    {
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 65536, options: FileOptions.Asynchronous);
+        return File(stream, "text/plain", enableRangeProcessing: false);
+    }
+
+    private IActionResult EmptySubtitle() => Content("", "text/plain");
+
+    private static List<MediaStreamInfo> ProbedStreams(MediaItem media)
+    {
+        if (string.IsNullOrWhiteSpace(media.StreamsJson)) return [];
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<MediaStreamInfo>>(media.StreamsJson) ?? [];
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return [];
+        }
     }
 
     private string ResourceSessionFor =>

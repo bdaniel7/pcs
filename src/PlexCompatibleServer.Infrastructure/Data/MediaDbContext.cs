@@ -29,7 +29,50 @@ public sealed class MediaDbContext : DbContext
             ("Items", "AudioChannels", "INTEGER NULL"),
             ("Items", "FrameRate", "REAL NULL"),
             ("Items", "Container", "TEXT NULL"),
-            ("Items", "StreamsJson", "TEXT NULL")
+            ("Items", "StreamsJson", "TEXT NULL"),
+            ("Items", "LibrarySectionId", "INTEGER NULL"),
+            ("Items", "ParentId", "INTEGER NULL"),
+            ("Items", "MetadataType", "INTEGER NULL"),
+            ("Items", "Guid", "TEXT NULL"),
+            ("Items", "MediaItemCount", "INTEGER NULL"),
+            ("Items", "OriginalTitle", "TEXT NULL"),
+            ("Items", "Studio", "TEXT NULL"),
+            ("Items", "Rating", "REAL NULL"),
+            ("Items", "RatingCount", "INTEGER NULL"),
+            ("Items", "Tagline", "TEXT NULL"),
+            ("Items", "Trivia", "TEXT NULL"),
+            ("Items", "Quotes", "TEXT NULL"),
+            ("Items", "ContentRating", "TEXT NULL"),
+            ("Items", "ContentRatingAge", "INTEGER NULL"),
+            ("Items", "[Index]", "INTEGER NULL"),
+            ("Items", "AbsoluteIndex", "INTEGER NULL"),
+            ("Items", "UserThumbUrl", "TEXT NULL"),
+            ("Items", "UserArtUrl", "TEXT NULL"),
+            ("Items", "UserBannerUrl", "TEXT NULL"),
+            ("Items", "UserMusicUrl", "TEXT NULL"),
+            ("Items", "UserFields", "TEXT NULL"),
+            ("Items", "TagsGenre", "TEXT NULL"),
+            ("Items", "TagsCollection", "TEXT NULL"),
+            ("Items", "TagsDirector", "TEXT NULL"),
+            ("Items", "TagsWriter", "TEXT NULL"),
+            ("Items", "TagsStar", "TEXT NULL"),
+            ("Items", "OriginallyAvailableAt", "TEXT NULL"),
+            ("Items", "AvailableAt", "TEXT NULL"),
+            ("Items", "ExpiresAt", "TEXT NULL"),
+            ("Items", "RefreshedAt", "TEXT NULL"),
+            ("Items", "TagsCountry", "TEXT NULL"),
+            ("Items", "ExtraData", "TEXT NULL"),
+            ("Items", "Hash", "TEXT NULL"),
+            ("Items", "AudienceRating", "REAL NULL"),
+            ("Items", "ChangedAt", "INTEGER NULL"),
+            ("Items", "ResourcesChangedAt", "INTEGER NULL"),
+            ("Items", "Remote", "INTEGER NULL"),
+            ("Items", "EditionTitle", "TEXT NULL"),
+            ("Items", "Slug", "TEXT NULL"),
+            ("Items", "UserClearLogoUrl", "TEXT NULL"),
+            ("Items", "IsAdult", "INTEGER NULL"),
+            ("Items", "MetadataAgentProviderGroupId", "INTEGER NULL"),
+            ("Items", "UserSquareArtUrl", "TEXT NULL")
         };
 
         foreach (var (table, column, definition) in additive)
@@ -68,6 +111,9 @@ public sealed class MediaDbContext : DbContext
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
+                if (column == "[Index]") {
+                    column = "Index";
+                }
                 if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
                     return true;
             }
