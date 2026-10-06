@@ -67,12 +67,26 @@ public class DetailScreenShapeTests
         Assert.That(hub.GetProperty("size").GetInt32(), Is.EqualTo(rows.Count));
         Assert.That(rows, Is.Not.Empty);
 
-        // hubKey is a comma-joined list of the row keys, in row order.
+        // hubKey is a single /library/metadata/ prefix followed by the comma-joined rating keys,
+        // in row order (official capture: "/library/metadata/3,644,645,729,651,94").
         Assert.That(hub.GetProperty("hubKey").GetString(),
-            Is.EqualTo(string.Join(",", rows.Select(x => "/library/metadata/" + x.GetProperty("ratingKey").GetString()))));
+            Is.EqualTo("/library/metadata/" + string.Join(",", rows.Select(x => x.GetProperty("ratingKey").GetString()))));
 
         // The movie being viewed is not its own recommendation.
         Assert.That(rows.Any(x => x.GetProperty("ratingKey").GetString() == "8"), Is.False);
+
+        // Rows state the same scraped-metadata sections as the detail item: the client
+        // dereferences the first credit/genre entry of each row without a null check.
+        foreach (var row in rows)
+        {
+            foreach (var section in new[] { "Role", "Director", "Writer", "Genre", "Rating" })
+            {
+                Assert.That(row.GetProperty(section).GetArrayLength(), Is.GreaterThan(0),
+                    $"row {row.GetProperty("ratingKey").GetString()} has an empty {section} list");
+            }
+            Assert.That(row.GetProperty("chapterSource").GetString(), Is.EqualTo("media"));
+            Assert.That(row.TryGetProperty("summary", out _), Is.True);
+        }
     }
 
     [Test]
