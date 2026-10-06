@@ -178,6 +178,22 @@ public sealed class LibraryController : ControllerBase
         return $"{baseSlug}-{Convert.ToHexString(hash, 0, 4).ToLowerInvariant()}";
     }
 
+    /// <summary>
+    /// Real Plex guids are <c>plex://{type}/</c> followed by exactly 24 lowercase hex characters,
+    /// and the same item must present the same guid on every response and after every restart:
+    /// the movie info screen reads the guid and rejects anything that is not shaped like a real
+    /// one ("content could not be loaded"), so a short id or a guid that changes between requests
+    /// breaks the detail page. Derived from the file path, which is stable across rescans - a
+    /// string hash cannot be used because .NET randomises it per process.
+    /// </summary>
+    private static string StableGuidHex(MediaItem x)
+    {
+        var key = string.IsNullOrEmpty(x.FilePath) ? $"{x.LibraryId}/{x.Id}/{x.Title}" : x.FilePath;
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(key));
+        return Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
+    }
+
     internal static XmlVideo ToVideo(
         MediaItem x,
         bool includeLibrarySection = true,
@@ -187,7 +203,7 @@ public sealed class LibraryController : ControllerBase
         var extension = Path.GetExtension(x.FilePath).TrimStart('.').ToLowerInvariant();
         var container = string.IsNullOrEmpty(x.Container) ? extension : x.Container;
         var type = x.Library.Type == LibraryType.Movie ? "movie" : "episode";
-        var guid = $"plex://{type}/{x.Id:x}{Math.Abs(x.Title.GetHashCode()):x8}";
+        var guid = $"plex://{type}/{StableGuidHex(x)}";
         var slug = UniqueSlug(x.Title, guid);
         var streams = ReadStreams(x, selections);
 

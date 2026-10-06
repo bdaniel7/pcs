@@ -173,7 +173,8 @@ public sealed class HubController : ControllerBase
     /// <c>/hubs/metadata/826/related?includeMeta=1&amp;wait=1</c> is a single hub carrying
     /// <c>type="movie"</c>, <c>context="hub.movie.similar"</c>, <c>hubIdentifier="movie.similar"</c>,
     /// <c>key="/library/metadata/826/similar"</c>, <c>size</c> equal to the row count, and
-    /// <c>hubKey</c> as a comma-joined list of <c>/library/metadata/{id}</c> keys. Only movie items
+    /// <c>hubKey</c> as a single <c>/library/metadata/</c> prefix followed by the comma-joined
+    /// rating keys of the rows (<c>/library/metadata/3,644,645</c>). Only movie items
     /// trigger this call on the LG client, and it is the last request before the detail screen
     /// either renders or reports that content could not be loaded.
     /// </summary>
@@ -214,13 +215,20 @@ public sealed class HubController : ControllerBase
             .Select(x => LibraryController.ToVideo(x, includeLibrarySection: true))
             .ToList();
 
-        // Official rows in this hub carry the same scraped-metadata sections as the detail screen.
-        foreach (var video in relatedVideos) video.EmitEmptyMetadataSections = true;
+        // Official rows in this hub carry the same scraped-metadata sections as the detail screen,
+        // and the client dereferences their credit lists the same way it does the detail item's -
+        // empty lists crash the screen. Hub rows additionally state chapterSource; plain metadata
+        // items do not.
+        for (var i = 0; i < related.Count; i++)
+        {
+            MetadataParity.Apply(related[i], relatedVideos[i], related[i].Id, includeExtras: false);
+            relatedVideos[i].ChapterSource = "media";
+        }
 
         var hub = new XmlHub
         {
             Key = $"/library/metadata/{id}/similar",
-            HubKey = string.Join(",", related.Select(x => $"/library/metadata/{x.Id}")),
+            HubKey = "/library/metadata/" + string.Join(",", related.Select(x => x.Id)),
             Title = isMovie ? "More Like This" : "Related Episodes",
             Type = kind,
             HubIdentifier = $"{kind}.similar",

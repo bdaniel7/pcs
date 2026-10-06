@@ -41,6 +41,8 @@ internal static class OfficialReplay
     public static IReadOnlyDictionary<string, string[]> Regions { get; } = new Dictionary<string, string[]>
     {
         ["streams"] = new[] { "Media" },
+        ["images"] = new[] { "Image" },
+        ["guids"] = new[] { "Guid" },
         ["tags"] = new[]
         {
             "Genre", "Director", "Writer", "Role", "Rating", "Country", "Producer",
@@ -80,6 +82,20 @@ internal static class OfficialReplay
         {
             "addedAt", "updatedAt", "duration", "bitrate", "size", "file",
             "mediaTagVersion", "viewOffset", "viewCount", "lastViewedAt"
+        },
+        // Human-facing naming, split off from identity so the two can be bisected separately.
+        ["names"] = new[] { "title", "titleSort", "slug", "studio" },
+        // Single-field groups for the last mile of the identity split.
+        ["movieguid"] = new[] { "guid" },
+        ["sect"] = new[] { "librarySectionTitle", "librarySectionUUID" },
+        ["yearonly"] = new[] { "year" },
+        // Everything identity holds apart from the names group.
+        ["locs"] = new[]
+        {
+            "key", "guid", "type", "year",
+            "parentKey", "parentGuid", "parentRatingKey", "parentThumb",
+            "grandparentKey", "grandparentGuid", "grandparentRatingKey",
+            "librarySectionID", "librarySectionTitle", "librarySectionUUID"
         },
     };
 

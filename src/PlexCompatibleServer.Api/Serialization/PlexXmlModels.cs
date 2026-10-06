@@ -197,6 +197,9 @@ public sealed class XmlVideo
     // Nullable numerics must stay strings: XmlSerializer cannot put Nullable<T> on an XmlAttribute.
     [XmlAttribute("contentRatingAge")] public string ContentRatingAge { get; set; } = "";
     [XmlAttribute("originallyAvailableAt")] public string OriginallyAvailableAt { get; set; } = "";
+    // Official Plex states this on related-hub rows ("media") but not on plain metadata items;
+    // left empty it serialises as absent, which is what the item responses want.
+    [XmlAttribute("chapterSource")] public string ChapterSource { get; set; } = "";
     [XmlAttribute("hasPremiumPrimaryExtra")] public string HasPremiumPrimaryExtra { get; set; } = "";
 
     [XmlElement("Media")]

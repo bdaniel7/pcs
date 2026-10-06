@@ -98,6 +98,10 @@ app.Use(async (context, next) =>
     // advertising it, so they have to be present for the CORS declaration to be truthful.
     // The client identifier is echoed back from the request when the client sends one.
     var clientIdentifier = context.Request.Headers["X-Plex-Client-Identifier"].FirstOrDefault();
+    // The client only sends its token on /identity; remember it for plex.tv metadata lookups.
+    var requestToken = context.Request.Query["X-Plex-Token"].FirstOrDefault()
+        ?? context.Request.Headers["X-Plex-Token"].FirstOrDefault();
+    PlexCompatibleServer.Api.Controllers.ExternalMetadata.CaptureToken(requestToken);
     context.Response.Headers["X-Plex-Client-Identifier"] =
         string.IsNullOrEmpty(clientIdentifier) ? serverOptions.MachineIdentifier : clientIdentifier;
     context.Response.Headers["X-Plex-Machine-Identifier"] = serverOptions.MachineIdentifier;

@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -13,14 +15,41 @@ namespace PlexCompatibleServer.Api.Controllers;
 internal static class ExternalMetadata
 {
     private const string SidecarPath = "wwwroot/plex-metadata.json";
+    private const string LookupCacheFileName = "plex-lookup-cache.json";
+    private const string SearchUrlFormat =
+        "https://discover.provider.plex.tv/library/search?query={0}&type=1&limit=10&searchProviders=discover&searchTypes=movies";
+    private const string DetailUrlFormat = "https://discover.provider.plex.tv/library/metadata/{0}";
 
-    private static readonly JsonSerializerOptions Options = new()
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
+    private static readonly object CacheLock = new();
+    private static string? _plexToken;
+    private static Dictionary<string, SidecarItem>? _lookupCache;
+
+    /// <summary>
+    /// Captures the auth token the client sends (only on /identity). Full plex.tv metadata lookups
+    /// need it; the search endpoint works anonymously, so a missing token still yields the guid.
+    /// </summary>
+    public static void CaptureToken(string? token)
+    {
+        if (!string.IsNullOrEmpty(token)) _plexToken = token;
+    }
+
+    internal static readonly JsonSerializerOptions Options = new()
     {
         PropertyNameCaseInsensitive = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // The scraped sidecar mixes value types - "year" is a JSON number while the model
+        // declares string, and numeric fields arrive as quoted strings. Deserialization used to
+        // throw on the first entry, which silently disabled the entire sidecar.
+        Converters =
+        {
+            new FlexibleStringConverter(),
+            new FlexibleNumberConverter<double>(),
+            new FlexibleNumberConverter<int>()
+        }
     };
 
-    private static Dictionary<string, SidecarItem>? _cache;
+    private static ConcurrentDictionary<string, SidecarItem>? _cache;
 
     public static void Apply(MediaItem item, XmlVideo video)
     {
@@ -77,8 +106,57 @@ var key = GetKey(item);
             rec ??= GetFuzzy(video.Title ?? string.Empty);
             rec ??= GetFuzzy(video.TitleSort ?? string.Empty);
         }
+
+            // No local record: look the movie up on plex.tv. The client resolves the guid it gets
+        // against plex.tv, so an item without a real guid cannot open its detail page at all.
+        if (rec is null) rec = LookupOnline(item);
+
+        // A lookup that ran before the client sent its token (identity precedes metadata calls)
+        // only has the guid; fill in the rich fields once the token is known.
+        if (rec is not null && !rec.DetailChecked && !string.IsNullOrEmpty(rec.RatingKey) &&
+            _plexToken is not null)
+        {
+            rec.DetailChecked = true;
+            try
+            {
+                var detailJson = Fetch(string.Format(DetailUrlFormat, rec.RatingKey), true);
+                if (detailJson is not null)
+                {
+                    EnrichFromDetail(rec, detailJson);
+                    var enrichedKey = GetKey(item);
+                    if (!string.IsNullOrEmpty(enrichedKey)) PersistLookup(enrichedKey, rec);
+                }
+            }
+            catch
+            {
+                // Guid-only record still fixes the page.
+            }
+        }
+
         if (rec is null) return;
 
+        // The sidecar carries the item's real Plex guid, which metadata.plex.tv can resolve.
+        // Prefer it over the generated one; the detail screen reads this field directly.
+        if (!string.IsNullOrEmpty(rec.Guid))
+        {
+            video.Guid = rec.Guid;
+            if (video.Guids.Count > 0) video.Guids[0].Id = rec.Guid;
+            else video.Guids.Add(new XmlGuid { Id = rec.Guid });
+        }
+
+        // External source ids (imdb://, tmdb://, tvdb://) as the real server publishes them,
+        // with the item's own plex guid first - that is the shape that worked for sidecar items.
+        if (rec.Guids is { Count: > 0 })
+        {
+            video.Guids.Clear();
+            if (!string.IsNullOrEmpty(rec.Guid)) video.Guids.Add(new XmlGuid { Id = rec.Guid });
+            foreach (var g in rec.Guids)
+                if (!string.IsNullOrEmpty(g) && g != rec.Guid) video.Guids.Add(new XmlGuid { Id = g });
+        }
+
+        // Adopt the matched record's real display title; until now the raw filename was served
+        // as title even when the sidecar/lookup knew the proper one.
+        if (!string.IsNullOrEmpty(rec.Title)) video.Title = rec.Title;
         if (!string.IsNullOrEmpty(rec.TitleSort)) video.TitleSort = rec.TitleSort;
         if (!string.IsNullOrEmpty(rec.Studio)) video.Studio = rec.Studio;
         if (!string.IsNullOrEmpty(rec.Year)) video.Year = rec.Year;
@@ -304,12 +382,12 @@ var key = GetKey(item);
         var cache = _cache;
         if (cache is null)
         {
-            var path = Path.Combine(AppContext.BaseDirectory, "wwwroot", "plex-metadata.json");
-            if (!File.Exists(path)) path = Path.Combine(AppContext.BaseDirectory, "..", "wwwroot", "plex-metadata.json");
-            if (!File.Exists(path)) path = SidecarPath;
-            cache = File.Exists(path)
+            var path = ResolveSidecarPath();
+            var loaded = path is not null
                 ? JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(File.ReadAllText(path), Options)
-                : new Dictionary<string, SidecarItem>();
+                : null;
+            cache = new ConcurrentDictionary<string, SidecarItem>(loaded ?? new(), StringComparer.Ordinal);
+            foreach (var kv in LoadLookupCache()) cache[kv.Key] = kv.Value;
             _cache = cache;
         }
         if (cache!.TryGetValue(key, out var v)) return v;
@@ -351,6 +429,478 @@ var key = GetKey(item);
         var h = (tag ?? kind).GetHashCode();
         return (Math.Abs(seed * 131542391 + h) % 1000000).ToString(CultureInfo.InvariantCulture);
     }
+
+    private static string? ResolveSidecarPath()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "wwwroot", "plex-metadata.json");
+        if (File.Exists(path)) return path;
+        path = Path.Combine(AppContext.BaseDirectory, "..", "wwwroot", "plex-metadata.json");
+        if (File.Exists(path)) return path;
+        return File.Exists(SidecarPath) ? Path.GetFullPath(SidecarPath) : null;
+    }
+
+    private static string LookupCachePath()
+    {
+        var sidecar = ResolveSidecarPath();
+        var dir = sidecar is not null
+            ? Path.GetDirectoryName(sidecar)!
+            : Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        return Path.Combine(dir, LookupCacheFileName);
+    }
+
+    private static Dictionary<string, SidecarItem> LoadLookupCache()
+    {
+        try
+        {
+            var path = LookupCachePath();
+            if (!File.Exists(path)) return new Dictionary<string, SidecarItem>();
+            return JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(File.ReadAllText(path), Options)
+                ?? new Dictionary<string, SidecarItem>();
+        }
+        catch
+        {
+            return new Dictionary<string, SidecarItem>();
+        }
+    }
+
+    private static void PersistLookup(string key, SidecarItem rec)
+    {
+        lock (CacheLock)
+        {
+            _lookupCache ??= LoadLookupCache();
+            _lookupCache[key] = rec;
+            try
+            {
+                var path = LookupCachePath();
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                var tmp = path + ".tmp";
+                File.WriteAllText(tmp, JsonSerializer.Serialize(_lookupCache, Options));
+                File.Move(tmp, path, true);
+            }
+            catch
+            {
+                // A failed cache write must not fail the response; the lookup still serves this request.
+            }
+            if (_cache is not null) _cache[key] = rec;
+        }
+    }
+
+    /// <summary>
+    /// Resolves a movie's real plex.tv guid (and, when the client's token is known, full metadata)
+    /// for items the sidecar has no record of. The LG client resolves the guid it receives against
+    /// plex.tv and cannot open the detail page without one, so this runs synchronously once per
+    /// movie and is persisted to plex-lookup-cache.json.
+    /// </summary>
+    internal static SidecarItem? LookupOnline(MediaItem item)
+    {
+        try
+        {
+            var rec = FetchRecord(item);
+            if (rec is null) return null;
+            var key = GetKey(item);
+            if (!string.IsNullOrEmpty(key)) PersistLookup(key, rec);
+            return rec;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Search + detail fetch without touching any store; shared by the runtime lookup and the
+    /// backfill command.
+    /// </summary>
+    internal static SidecarItem? FetchRecord(MediaItem item)
+    {
+        if (item.Library is not { Type: LibraryType.Movie }) return null;
+        var title = CleanSearchTitle(item.FilePath ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(title)) return null;
+
+        var searchJson = Fetch(string.Format(SearchUrlFormat, Uri.EscapeDataString(title)), false);
+        if (searchJson is null) return null;
+
+        var rec = PickCandidate(searchJson, title, item.Year);
+        if (rec?.Guid is null) return null;
+
+        if (!string.IsNullOrEmpty(rec.RatingKey) && _plexToken is not null)
+        {
+            rec.DetailChecked = true;
+            try
+            {
+                var detailJson = Fetch(string.Format(DetailUrlFormat, rec.RatingKey), true);
+                if (detailJson is not null) EnrichFromDetail(rec, detailJson);
+            }
+            catch
+            {
+                // The guid-only record still fixes the page.
+            }
+        }
+
+        return rec;
+    }
+
+    /// <summary>
+    /// True when any loaded store (sidecar or lookup cache) already covers this item.
+    /// </summary>
+    internal static bool HasRecord(MediaItem item)
+    {
+        var key = GetKey(item);
+        if (!string.IsNullOrEmpty(key) && Get(key) is not null) return true;
+        var title = item.Title ?? string.Empty;
+        if (title.Length > 0 && (Get(title) is not null || Get(title.ToLowerInvariant()) is not null))
+            return true;
+        return GetFuzzy(title) is not null;
+    }
+
+    /// <summary>
+    /// Fills sidecar gaps for every movie that no store covers: plex.tv search + detail per item,
+    /// written back into plex-metadata.json (atomic replace) and the in-memory cache. Episodes are
+    /// out of scope until an episode lookup exists.
+    /// </summary>
+    internal static BackfillResult Backfill(IReadOnlyList<MediaItem> items)
+    {
+        var result = new BackfillResult();
+        foreach (var item in items)
+        {
+            result.Scanned++;
+            var label = item.Title ?? item.FilePath ?? $"item {item.Id}";
+            try
+            {
+                if (HasRecord(item))
+                {
+                    result.Present++;
+                    continue;
+                }
+                var rec = FetchRecord(item);
+                var key = GetKey(item);
+                if (rec?.Guid is null || string.IsNullOrEmpty(key))
+                {
+                    result.Failed.Add(label);
+                    continue;
+                }
+                UpsertSidecar(key, rec);
+                result.Created++;
+                result.CreatedTitles.Add(rec.Title ?? label);
+            }
+            catch
+            {
+                result.Failed.Add(label);
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Merges one record into plex-metadata.json (fresh read, indented, atomic) and the
+    /// in-memory cache.
+    /// </summary>
+    internal static void UpsertSidecar(string key, SidecarItem rec)
+    {
+        lock (CacheLock)
+        {
+            var path = ResolveSidecarPath()
+                ?? Path.Combine(AppContext.BaseDirectory, "wwwroot", "plex-metadata.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var dict = new Dictionary<string, SidecarItem>(StringComparer.Ordinal);
+            if (File.Exists(path))
+            {
+                try
+                {
+                    dict = JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(
+                        File.ReadAllText(path), Options) ?? dict;
+                }
+                catch
+                {
+                    // Never overwrite a sidecar that no longer parses - that would destroy data.
+                    throw;
+                }
+            }
+            dict[key] = rec;
+            var writeOptions = new JsonSerializerOptions(Options) { WriteIndented = true };
+            var tmp = path + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(dict, writeOptions));
+            File.Move(tmp, path, true);
+            if (_cache is not null) _cache[key] = rec;
+        }
+    }
+
+    /// <summary>
+    /// tokens up to the release year (scene names put it right after the title), falling back to
+    /// the first quality token when the name carries no year.
+    /// </summary>
+    internal static string CleanSearchTitle(string filePath)
+    {
+        var file = filePath;
+        try { file = Path.GetFileName(file); } catch { }
+        var exts = new[] { ".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".wmv", ".iso", ".webm", ".flv" };
+        for (var i = 0; i < 3; i++)
+        {
+            var lower = file.ToLowerInvariant();
+            var stripped = false;
+            foreach (var e in exts)
+                if (lower.EndsWith(e))
+                {
+                    file = Path.GetFileNameWithoutExtension(file);
+                    stripped = true;
+                    break;
+                }
+            if (!stripped) break;
+        }
+
+        var tokens = new List<string>();
+        foreach (var t in System.Text.RegularExpressions.Regex.Split(file, "[^A-Za-z0-9]+"))
+            if (t.Length > 0) tokens.Add(t);
+
+        var yearIdx = -1;
+        for (var i = 1; i < tokens.Count; i++)
+            if (IsYearToken(tokens[i])) { yearIdx = i; break; }
+
+        var cut = tokens.Count;
+        if (yearIdx >= 0)
+        {
+            cut = yearIdx;
+        }
+        else
+        {
+            for (var i = 1; i < tokens.Count; i++)
+                if (IsQualityToken(tokens[i])) { cut = i; break; }
+        }
+
+        return string.Join(' ', tokens.GetRange(0, cut));
+    }
+
+    private static bool IsYearToken(string t) =>
+        t.Length == 4 && int.TryParse(t, out var y) && y >= 1900 && y <= 2100;
+
+    private static bool IsQualityToken(string t) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            t,
+            "^(1080p|2160p|720p|480p|webrip|webdl|web|dl|bluray|brrip|bdremux|x264|x265|h264|h265|hevc|remux|aac|ac3|eac3|dts|ddp|atmos|truehd|hdr|sdr|proper|repack|limited|unrated|multi|dual|subbed|dubbed|imax|10bit|8bit|yts|yify|gg|bz)$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Picks the anonymous-search candidate whose normalized title matches and whose year is within
+    /// one of the file's year; builds the minimal record (guid/title/year/date).
+    /// </summary>
+    internal static SidecarItem? PickCandidate(string searchJson, string title, int? year)
+    {
+        using var doc = JsonDocument.Parse(searchJson);
+        if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return null;
+        if (!mc.TryGetProperty("SearchResults", out var results)) return null;
+
+        var target = NormalizeTitle(title);
+        JsonElement best = default;
+        var haveBest = false;
+        var bestDiff = int.MaxValue;
+        foreach (var md in EnumMovieMetadata(results))
+        {
+            // Distributors rename films across regions - "And Life Goes On" is listed as
+            // "Life, and Nothing More…" but keeps the slug and-life-goes-on. Match the slug too.
+            var t = GetString(md, "title");
+            var slug = GetString(md, "slug");
+            var tNorm = t is null ? null : NormalizeTitle(t);
+            var slugNorm = slug is null ? null : NormalizeTitle(slug);
+            if (tNorm != target && slugNorm != target) continue;
+
+            var candYear = GetInt(md, "year");
+            var diff = (year is null || candYear is null) ? -1 : Math.Abs(candYear.Value - year.Value);
+            if (diff > 1) continue;
+            if (diff >= 0)
+            {
+                if (diff < bestDiff) { best = md; haveBest = true; bestDiff = diff; }
+            }
+            else if (!haveBest)
+            {
+                best = md; haveBest = true;
+            }
+        }
+        if (!haveBest) return null;
+
+        var rec = new SidecarItem
+        {
+            Guid = GetString(best, "guid"),
+            Title = GetString(best, "title"),
+            TitleSort = GetString(best, "title"),
+            Year = GetInt(best, "year")?.ToString(CultureInfo.InvariantCulture),
+            OriginallyAvailableAt = GetString(best, "originallyAvailableAt"),
+            RatingKey = GetString(best, "ratingKey")
+        };
+        return rec.Guid is null ? null : rec;
+    }
+
+    /// <summary>
+    /// Maps the rich plex.tv detail response onto a record produced by <see cref="PickCandidate"/>.
+    /// Any failure leaves the caller with the guid-only record.
+    /// </summary>
+    internal static void EnrichFromDetail(SidecarItem rec, string json)
+    {
+        try
+        {
+            EnrichCore(rec, json);
+        }
+        catch
+        {
+            // Keep whatever the guid-only record already holds.
+        }
+    }
+
+    private static void EnrichCore(SidecarItem rec, string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return;
+        if (!mc.TryGetProperty("Metadata", out var arr)) return;
+        JsonElement md = default;
+        foreach (var m in AsArray(arr)) { md = m; break; }
+        if (md.ValueKind == JsonValueKind.Undefined) return;
+
+        var guid = GetString(md, "guid");
+        if (!string.IsNullOrEmpty(guid)) rec.Guid = guid;
+        var title = GetString(md, "title");
+        if (!string.IsNullOrEmpty(title)) { rec.Title = title; rec.TitleSort = title; }
+        var y = GetInt(md, "year");
+        if (y.HasValue) rec.Year = y.Value.ToString(CultureInfo.InvariantCulture);
+
+        var s = GetString(md, "summary");
+        if (!string.IsNullOrEmpty(s)) rec.Summary = s;
+        s = GetString(md, "tagline");
+        if (!string.IsNullOrEmpty(s)) rec.Tagline = s;
+        s = GetString(md, "studio");
+        if (!string.IsNullOrEmpty(s)) rec.Studio = s;
+        s = GetString(md, "contentRating");
+        if (!string.IsNullOrEmpty(s)) rec.ContentRating = s;
+        s = GetString(md, "originallyAvailableAt");
+        if (!string.IsNullOrEmpty(s)) rec.OriginallyAvailableAt = s;
+
+        if (md.TryGetProperty("audienceRating", out var ar))
+            rec.AudienceRating = ar.ValueKind switch
+            {
+                JsonValueKind.Number => ar.GetDouble(),
+                JsonValueKind.String =>
+                    double.TryParse(ar.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d)
+                        ? d : null,
+                _ => null
+            };
+
+        if (md.TryGetProperty("Rating", out var ratings))
+            rec.Ratings = MapRatings(ratings);
+        if (md.TryGetProperty("Role", out var roles)) rec.Roles = MapPeople(roles);
+        if (md.TryGetProperty("Director", out var dirs)) rec.Directors = MapPeople(dirs);
+        if (md.TryGetProperty("Writer", out var ws)) rec.Writers = MapPeople(ws);
+        if (md.TryGetProperty("Producer", out var ps)) rec.Producers = MapPeople(ps);
+        if (md.TryGetProperty("Country", out var cs)) rec.Countries = MapStrings(cs, "tag");
+        if (md.TryGetProperty("Genre", out var gs)) rec.Genres = MapStrings(gs, "tag");
+        if (md.TryGetProperty("Guid", out var gids)) rec.Guids = MapStrings(gids, "id");
+    }
+
+    private static string? Fetch(string url, bool withToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        // Without this the provider answers XML (half-serialized), which cannot be parsed.
+        req.Headers.TryAddWithoutValidation("Accept", "application/json");
+        var token = _plexToken;
+        if (withToken && !string.IsNullOrEmpty(token))
+            req.Headers.TryAddWithoutValidation("X-Plex-Token", token);
+        using var resp = Http.SendAsync(req).GetAwaiter().GetResult();
+        if (!resp.IsSuccessStatusCode) return null;
+        return resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+    }
+
+    private static IEnumerable<JsonElement> EnumMovieMetadata(JsonElement searchResults)
+    {
+        foreach (var sr in AsArray(searchResults))
+        {
+            if (!sr.TryGetProperty("SearchResult", out var inner)) continue;
+            foreach (var res in AsArray(inner))
+            {
+                if (!res.TryGetProperty("Metadata", out var md)) continue;
+                foreach (var m in AsArray(md))
+                {
+                    var t = GetString(m, "type");
+                    if (t is not null && t != "movie") continue;
+                    yield return m;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<JsonElement> AsArray(JsonElement el)
+    {
+        if (el.ValueKind == JsonValueKind.Array) return el.EnumerateArray();
+        if (el.ValueKind == JsonValueKind.Object) return new[] { el };
+        return Array.Empty<JsonElement>();
+    }
+
+    private static string NormalizeTitle(string t) =>
+        System.Text.RegularExpressions.Regex.Replace(t.ToLowerInvariant(), "[^a-z0-9]+", "");
+
+    private static string? GetString(JsonElement el, string name) =>
+        el.ValueKind == JsonValueKind.Object && el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString()
+            : null;
+
+    private static int? GetInt(JsonElement el, string name)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(name, out var v)) return null;
+        if (v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n)) return n;
+        if (v.ValueKind == JsonValueKind.String && int.TryParse(v.GetString(), out var s)) return s;
+        return null;
+    }
+
+    private static double? GetDouble(JsonElement el, string name)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(name, out var v)) return null;
+        if (v.ValueKind == JsonValueKind.Number) return v.GetDouble();
+        if (v.ValueKind == JsonValueKind.String &&
+            double.TryParse(v.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d)) return d;
+        return null;
+    }
+
+    private static List<TagRef>? MapPeople(JsonElement arr)
+    {
+        var list = new List<TagRef>();
+        foreach (var m in AsArray(arr))
+        {
+            var tag = GetString(m, "tag");
+            if (string.IsNullOrEmpty(tag)) continue;
+            list.Add(new TagRef
+            {
+                Tag = tag,
+                TagKey = GetString(m, "id"),
+                Thumb = GetString(m, "thumb"),
+                Role = GetString(m, "role")
+            });
+        }
+        return list.Count > 0 ? list : null;
+    }
+
+    private static List<string>? MapStrings(JsonElement arr, string field)
+    {
+        var list = new List<string>();
+        foreach (var m in AsArray(arr))
+        {
+            var v = m.ValueKind == JsonValueKind.String ? m.GetString() : GetString(m, field);
+            if (!string.IsNullOrEmpty(v)) list.Add(v!);
+        }
+        return list.Count > 0 ? list : null;
+    }
+
+    private static List<RatingRef>? MapRatings(JsonElement arr)
+    {
+        var list = new List<RatingRef>();
+        foreach (var m in AsArray(arr))
+            list.Add(new RatingRef { Image = GetString(m, "image"), Type = GetString(m, "type"), Value = GetDouble(m, "value") });
+        return list.Count > 0 ? list : null;
+    }
+}
+
+internal sealed class BackfillResult
+{
+    public int Scanned { get; set; }
+    public int Present { get; set; }
+    public int Created { get; set; }
+    public List<string> CreatedTitles { get; set; } = new();
+    public List<string> Failed { get; set; } = new();
 }
 
 internal sealed class SidecarItem
@@ -368,6 +918,9 @@ internal sealed class SidecarItem
     public double? AudienceRating { get; set; }
     public string? AudienceRatingImage { get; set; }
     public string? Guid { get; set; }
+    public string? RatingKey { get; set; }
+    public bool DetailChecked { get; set; }
+    public List<string>? Guids { get; set; }
     public List<string>? Genres { get; set; }
     public List<string>? Countries { get; set; }
     public List<TagRef>? Directors { get; set; }
@@ -424,4 +977,45 @@ internal sealed class ReviewRef
     public string? Image { get; set; }
     public string? TagKey { get; set; }
     public string? Thumb { get; set; }
+}
+
+/// <summary>Reads a JSON string, number or boolean as a string ("2026" and 2026 are equal).</summary>
+internal sealed class FlexibleStringConverter : JsonConverter<string>
+{
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.TokenType switch
+        {
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.Number or JsonTokenType.True or JsonTokenType.False =>
+                Encoding.UTF8.GetString(reader.ValueSpan),
+            JsonTokenType.Null => null,
+            _ => throw new JsonException($"Unexpected token {reader.TokenType} for string.")
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        => writer.WriteStringValue(value);
+}
+
+/// <summary>Reads a JSON number or its quoted form as T.</summary>
+internal sealed class FlexibleNumberConverter<T> : JsonConverter<T> where T : struct, IFormattable, IParsable<T>
+{
+    public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.Number:
+                return T.Parse(Encoding.UTF8.GetString(reader.ValueSpan), CultureInfo.InvariantCulture);
+            case JsonTokenType.String:
+                var s = reader.GetString();
+                if (string.IsNullOrWhiteSpace(s)) throw new JsonException($"Empty value for {typeof(T).Name}.");
+                return T.Parse(s, CultureInfo.InvariantCulture);
+            default:
+                throw new JsonException($"Unexpected token {reader.TokenType} for {typeof(T).Name}.");
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
+        => writer.WriteRawValue(value.ToString(null, CultureInfo.InvariantCulture)!, skipInputValidation: true);
 }
