@@ -10,17 +10,20 @@ public sealed class MediaScanHostedService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly MediaOptions _options;
     private readonly MediaScanTrigger _trigger;
+    private readonly MetadataSyncTrigger _syncTrigger;
     private readonly ILogger<MediaScanHostedService> _logger;
 
     public MediaScanHostedService(
         IServiceScopeFactory scopeFactory,
         IOptions<MediaOptions> options,
         MediaScanTrigger trigger,
+        MetadataSyncTrigger syncTrigger,
         ILogger<MediaScanHostedService> logger)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _trigger = trigger;
+        _syncTrigger = syncTrigger;
         _logger = logger;
     }
 
@@ -51,6 +54,8 @@ public sealed class MediaScanHostedService : BackgroundService
             var scanner = scope.ServiceProvider.GetRequiredService<IMediaScanner>();
             await scanner.SynchronizeAsync(libraries, stoppingToken);
             _logger.LogInformation("Media scan completed ({Reason}).", reason);
+            // New or changed files may lack plex.tv records - hand off to the metadata agent.
+            _syncTrigger.Request(MetadataSyncReason.ScanCompleted);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
         catch (Exception ex)

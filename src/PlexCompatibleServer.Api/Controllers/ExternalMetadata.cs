@@ -543,15 +543,27 @@ var key = GetKey(item);
     /// <summary>
     /// True when any loaded store (sidecar or lookup cache) already covers this item.
     /// </summary>
-    internal static bool HasRecord(MediaItem item)
+    internal static bool HasRecord(MediaItem item) => TryGetRecord(item, out _);
+
+    /// <summary>
+    /// Finds the covering record (exact key first, then title/fuzzy fallbacks like Apply).
+    /// </summary>
+    internal static bool TryGetRecord(MediaItem item, out SidecarItem record)
     {
         var key = GetKey(item);
-        if (!string.IsNullOrEmpty(key) && Get(key) is not null) return true;
+        if (!string.IsNullOrEmpty(key) && Get(key) is { } byKey) { record = byKey; return true; }
         var title = item.Title ?? string.Empty;
-        if (title.Length > 0 && (Get(title) is not null || Get(title.ToLowerInvariant()) is not null))
-            return true;
-        return GetFuzzy(title) is not null;
+        if (title.Length > 0)
+        {
+            if (Get(title) is { } byTitle) { record = byTitle; return true; }
+            if (Get(title.ToLowerInvariant()) is { } byLower) { record = byLower; return true; }
+        }
+        if (GetFuzzy(title) is { } fuzzy) { record = fuzzy; return true; }
+        record = null!;
+        return false;
     }
+
+    internal static bool TokenKnown => _plexToken is not null;
 
     /// <summary>
     /// Fills sidecar gaps for every movie that no store covers: plex.tv search + detail per item,
@@ -567,8 +579,22 @@ var key = GetKey(item);
             var label = item.Title ?? item.FilePath ?? $"item {item.Id}";
             try
             {
-                if (HasRecord(item))
+                if (TryGetRecord(item, out var existing))
                 {
+                    // A record created before the client's token was known only has the guid -
+                    // once the token arrives, fetch the rich detail and merge it.
+                    if (!existing.DetailChecked && !string.IsNullOrEmpty(existing.RatingKey) &&
+                        TokenKnown)
+                    {
+                        var enriched = FetchRecord(item);
+                        var existingKey = GetKey(item);
+                        if (enriched?.Guid is not null && !string.IsNullOrEmpty(existingKey))
+                        {
+                            UpsertSidecar(existingKey, enriched);
+                            result.Enriched++;
+                            continue;
+                        }
+                    }
                     result.Present++;
                     continue;
                 }
@@ -681,7 +707,11 @@ var key = GetKey(item);
 
     /// <summary>
     /// Picks the anonymous-search candidate whose normalized title matches and whose year is within
-    /// one of the file's year; builds the minimal record (guid/title/year/date).
+    /// one of the file's year; builds the minimal record (guid/title/year/date). When no candidate
+    /// matches by name - distributors translate titles, e.g. "Zwei Staatsanwalte" is listed as
+    /// "Two Prosecutors" - falls back to plex.tv's top-ranked result if its year checks out and it
+    /// clearly leads the rest of the results (observed correct matches score 0.38+ while unrelated
+    /// noise sits at 0.30 and below).
     /// </summary>
     internal static SidecarItem? PickCandidate(string searchJson, string title, int? year)
     {
@@ -689,11 +719,12 @@ var key = GetKey(item);
         if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return null;
         if (!mc.TryGetProperty("SearchResults", out var results)) return null;
 
+        var candidates = FlattenCandidates(results);
         var target = NormalizeTitle(title);
         JsonElement best = default;
         var haveBest = false;
         var bestDiff = int.MaxValue;
-        foreach (var md in EnumMovieMetadata(results))
+        foreach (var (md, _) in candidates)
         {
             // Distributors rename films across regions - "And Life Goes On" is listed as
             // "Life, and Nothing More…" but keeps the slug and-life-goes-on. Match the slug too.
@@ -713,6 +744,19 @@ var key = GetKey(item);
             else if (!haveBest)
             {
                 best = md; haveBest = true;
+            }
+        }
+
+        if (!haveBest && year is not null && candidates.Count > 0)
+        {
+            var (topMd, topScore) = candidates[0];
+            var topYear = GetInt(topMd, "year");
+            var clearlyFirst = topScore is >= 0.35 &&
+                (candidates.Count == 1 || topScore > candidates[1].Score);
+            if (clearlyFirst && topYear is not null && Math.Abs(topYear.Value - year.Value) <= 1)
+            {
+                best = topMd;
+                haveBest = true;
             }
         }
         if (!haveBest) return null;
@@ -806,22 +850,37 @@ var key = GetKey(item);
         return resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
     }
 
-    private static IEnumerable<JsonElement> EnumMovieMetadata(JsonElement searchResults)
+    /// <summary>
+    /// Flattens MediaContainer.SearchResults[].SearchResult[].Metadata[] in relevance order,
+    /// carrying each SearchResult's score (present in live responses, absent in test fixtures).
+    /// </summary>
+    private static List<(JsonElement Md, double? Score)> FlattenCandidates(JsonElement searchResults)
     {
+        var list = new List<(JsonElement, double?)>();
         foreach (var sr in AsArray(searchResults))
         {
             if (!sr.TryGetProperty("SearchResult", out var inner)) continue;
             foreach (var res in AsArray(inner))
             {
+                double? score = null;
+                if (res.TryGetProperty("score", out var sc))
+                {
+                    if (sc.ValueKind == JsonValueKind.Number) score = sc.GetDouble();
+                    else if (sc.ValueKind == JsonValueKind.String &&
+                             double.TryParse(sc.GetString(), NumberStyles.Float,
+                                 CultureInfo.InvariantCulture, out var sv))
+                        score = sv;
+                }
                 if (!res.TryGetProperty("Metadata", out var md)) continue;
                 foreach (var m in AsArray(md))
                 {
                     var t = GetString(m, "type");
                     if (t is not null && t != "movie") continue;
-                    yield return m;
+                    list.Add((m, score));
                 }
             }
         }
+        return list;
     }
 
     private static IEnumerable<JsonElement> AsArray(JsonElement el)
@@ -894,11 +953,12 @@ var key = GetKey(item);
     }
 }
 
-internal sealed class BackfillResult
+public sealed class BackfillResult
 {
     public int Scanned { get; set; }
     public int Present { get; set; }
     public int Created { get; set; }
+    public int Enriched { get; set; }
     public List<string> CreatedTitles { get; set; } = new();
     public List<string> Failed { get; set; } = new();
 }

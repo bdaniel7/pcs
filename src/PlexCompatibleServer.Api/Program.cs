@@ -49,11 +49,14 @@ var serverOptions = builder.Configuration.GetSection("Server").Get<ServerOptions
 
 builder.Services.AddSingleton(serverOptions);
 builder.Services.AddSingleton<MediaScanTrigger>();
+builder.Services.AddSingleton<MetadataSyncTrigger>();
+builder.Services.AddSingleton<MetadataSyncService>();
 builder.Services.AddSingleton<PlaybackState>();
 // The viewer's audio/subtitle pick: written by PUT /library/parts/{id} and read back by every
 // response that publishes a stream list, so it has to outlive a single request.
 builder.Services.AddSingleton<StreamSelectionStore>();
 builder.Services.AddHostedService<MediaScanHostedService>();
+builder.Services.AddHostedService<MetadataSyncHostedService>();
 builder.Services.AddControllers();
 
 builder.Services.AddCors(options =>
