@@ -2,9 +2,17 @@
 
 **Proof of concept**
 
-Reverse-engineered by analyzing traffic captured with Wireshark.
+Reverse-engineered by analyzing traffic captured with Wireshark, and official SQLite database.
 
-A local, unauthenticated Plex-compatible media server for LG Plex clients.
+A local, unauthenticated, Plex-compatible media server for LG Plex clients.
+
+Tested from an LG TV.
+
+## Features
+
+- On start, scans the media (TV and Movies) from configured paths.
+- Can rebuild the metadata if **media.db** is missing.
+- Can serve external or embedded subtitles. 
 
 ## Scope
 
