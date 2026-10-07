@@ -74,7 +74,7 @@ public sealed class PlayQueueController : ControllerBase
     {
         var entry = queue.Items.FirstOrDefault(x => x.Id == queue.SelectedItemId);
         if (entry is null) return new XmlMediaContainer();
-        var video = LibraryController.ToVideo(item, includeLibrarySection: true, selections: _selections);
+        var video = LibraryController.ToVideoEnriched(item, includeLibrarySection: true, selections: _selections);
         video.PlayQueueItemID = entry.Id.ToString();
 
         // The queue response is a summary: Media carries the part-less descriptor the client

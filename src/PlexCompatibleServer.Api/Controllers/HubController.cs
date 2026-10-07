@@ -265,7 +265,7 @@ public sealed class HubController : ControllerBase
             Size = recent.Count,
             MixedParents = "1",
             TotalSize = recent.Count.ToString(),
-            Videos = recent.Select(x => LibraryController.ToVideo(x)).ToList()
+            Videos = recent.Select(x => LibraryController.ToVideoEnriched(x)).ToList()
         });
     }
 
@@ -300,7 +300,7 @@ public sealed class HubController : ControllerBase
             .ToList();
 
         var videos = recent
-            .Select(x => LibraryController.ToVideo(x, includeLibrarySection: true))
+            .Select(x => LibraryController.ToVideoEnriched(x, includeLibrarySection: true))
             .ToList();
 
         return new XmlHub
@@ -327,7 +327,7 @@ public sealed class HubController : ControllerBase
         int limit)
     {
         var recent = items.OrderByDescending(x => x.UpdatedAt).Take(limit).ToList();
-        var videos = recent.Select(x => LibraryController.ToVideo(x)).ToList();
+        var videos = recent.Select(x => LibraryController.ToVideoEnriched(x)).ToList();
 
         return new XmlHub
         {

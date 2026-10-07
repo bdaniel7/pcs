@@ -64,7 +64,13 @@ internal static class ExternalMetadata
 
     private static ConcurrentDictionary<string, SidecarItem>? _cache;
 
-    public static void Apply(MediaItem item, XmlVideo video)
+    /// <param name="allowNetwork">
+    /// False on list/grid responses, which are served strictly from the local cache: a page of
+    /// titles must never wait on plex.tv, and the client re-requests lists constantly. Detail
+    /// responses keep the online fallback because an item without a real guid cannot open its
+    /// detail page at all.
+    /// </param>
+    public static void Apply(MediaItem item, XmlVideo video, bool allowNetwork = true)
     {
 var key = GetKey(item);
         if (string.IsNullOrEmpty(key)) return;
@@ -130,11 +136,11 @@ var key = GetKey(item);
 
             // No local record: look the movie up on plex.tv. The client resolves the guid it gets
         // against plex.tv, so an item without a real guid cannot open its detail page at all.
-        if (rec is null) rec = LookupOnline(item);
+        if (rec is null && allowNetwork) rec = LookupOnline(item);
 
         // A lookup that ran before the client sent its token (identity precedes metadata calls)
         // only has the guid; fill in the rich fields once the token is known.
-        if (rec is not null && !rec.DetailChecked && !string.IsNullOrEmpty(rec.RatingKey) &&
+        if (allowNetwork && rec is not null && !rec.DetailChecked && !string.IsNullOrEmpty(rec.RatingKey) &&
             _plexToken is not null)
         {
             rec.DetailChecked = true;
@@ -157,7 +163,7 @@ var key = GetKey(item);
         // A record written by the old scrape (or a pre-token lookup) carries the episode's content
         // but no season/episode hierarchy - the info screen reads those fields - so re-walk the
         // show once, after the token is known, and keep serving the old record if that fails.
-        if (rec is not null && isEpisode && _plexToken is not null &&
+        if (allowNetwork && rec is not null && isEpisode && _plexToken is not null &&
             (rec.Index is null || rec.ParentTitle is null || rec.GrandparentTitle is null))
         {
             var fresh = FetchRecord(item);
@@ -547,6 +553,60 @@ var key = GetKey(item);
     }
 
     /// <summary>
+    /// Show bindings live in their own file: a show name (year-stripped) -> the show that a
+    /// confident pick resolved it to. Once "Dark Matter" is known to be the 2024 series, every
+    /// titleless sibling file ("dark.matter.s02e01...") resolves to the same show instead of
+    /// losing the exact-title tie to the 2015 series.
+    /// </summary>
+    private const string ShowBindingsFileName = "plex-show-bindings.json";
+    private static Dictionary<string, SidecarItem>? _showBindings;
+
+    private static Dictionary<string, SidecarItem> LoadShowBindings()
+    {
+        try
+        {
+            var path = Path.Combine(Path.GetDirectoryName(LookupCachePath())!, ShowBindingsFileName);
+            if (!File.Exists(path)) return new Dictionary<string, SidecarItem>();
+            return JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(
+                File.ReadAllText(path), Options) ?? new Dictionary<string, SidecarItem>();
+        }
+        catch
+        {
+            return new Dictionary<string, SidecarItem>();
+        }
+    }
+
+    internal static SidecarItem? GetShowBinding(string key)
+    {
+        lock (CacheLock)
+        {
+            _showBindings ??= LoadShowBindings();
+            return _showBindings.TryGetValue(key, out var show) ? show : null;
+        }
+    }
+
+    internal static void SaveShowBinding(string key, SidecarItem show)
+    {
+        lock (CacheLock)
+        {
+            _showBindings ??= LoadShowBindings();
+            _showBindings[key] = show;
+            try
+            {
+                var path = Path.Combine(Path.GetDirectoryName(LookupCachePath())!, ShowBindingsFileName);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                var tmp = path + ".tmp";
+                File.WriteAllText(tmp, JsonSerializer.Serialize(_showBindings, Options));
+                File.Move(tmp, path, true);
+            }
+            catch
+            {
+                // A failed binding write degrades to the un-bound behaviour on the next run.
+            }
+        }
+    }
+
+    /// <summary>
     /// Resolves an item's real plex.tv guid (and, when the client's token is known, full metadata)
     /// for items the sidecar has no record of. The LG client resolves the guid it receives against
     /// plex.tv and cannot open the detail page without one, so this runs synchronously once per
@@ -608,11 +668,28 @@ var key = GetKey(item);
     /// via search, then walk show -> season -> episode until the episode's own payload turns up
     /// (title, summary, credits, hierarchy). Show-level genres/studio are merged from the show
     /// detail because the episode payload does not carry them. Everything here works anonymously.
+    ///
+    /// Show picks must not be left to chance when two series share a name: an exact-title search
+    /// for "Dark Matter" returns both the 2015 and the 2024 series, and titleless filenames
+    /// ("dark.matter.s02e01...") lose the tie to the wrong one. Resolution order: a year in the
+    /// filename picks by year; otherwise an existing binding answers outright; otherwise a
+    /// filename episode title is verified against each candidate's actual episode; only when none
+    /// of those signals exist does the plain exact-title pick apply - and that guess never binds.
     /// </summary>
     internal static SidecarItem? FetchEpisodeRecord(MediaItem item)
     {
         var parsed = TvEpisodeName.Parse(item.FilePath ?? string.Empty);
         if (parsed is null) return null;
+
+        var showNameHasYear = ContainsYearToken(parsed.ShowName);
+        var bindingKey = ShowBindingKey(parsed.ShowName);
+
+        if (!showNameHasYear && GetShowBinding(bindingKey) is { RatingKey: { Length: > 0 } } bound)
+        {
+            var viaBinding = WalkEpisodeShow(parsed, bound);
+            if (viaBinding is not null) return viaBinding;
+            // A binding whose show no longer has the season is stale: fall through to a fresh search.
+        }
 
         var searchJson = Fetch(string.Format(TvSearchUrlFormat, Uri.EscapeDataString(parsed.ShowName)), false);
         if (searchJson is null) return null;
@@ -620,6 +697,34 @@ var key = GetKey(item);
         var show = PickShow(searchJson, parsed.ShowName);
         if (show?.RatingKey is null) return null;
 
+        var confident = false;
+        if (showNameHasYear)
+        {
+            var byYear = PickShowByYear(GetShowCandidates(searchJson, parsed.ShowName), parsed.ShowName);
+            if (byYear?.RatingKey is not null)
+            {
+                show = byYear;
+                confident = true;
+            }
+        }
+        else if (parsed.EpisodeTitle.Length > 0)
+        {
+            var byTitle = VerifyByEpisodeTitle(
+                GetShowCandidates(searchJson, parsed.ShowName), parsed, url => Fetch(url, true));
+            if (byTitle?.RatingKey is not null)
+            {
+                show = byTitle;
+                confident = true;
+            }
+        }
+
+        if (confident) SaveShowBinding(bindingKey, show);
+        return WalkEpisodeShow(parsed, show);
+    }
+
+    /// <summary>Show -> season -> episode walk that turns a show pick into the episode record.</summary>
+    private static SidecarItem? WalkEpisodeShow(ParsedEpisodeName parsed, SidecarItem show)
+    {
         var seasonsJson = Fetch(string.Format(ChildrenUrlFormat, show.RatingKey), true);
         if (seasonsJson is null) return null;
         var seasonKey = PickSeasonKey(seasonsJson, parsed.Season);
@@ -683,6 +788,133 @@ var key = GetKey(item);
             RatingKey = GetString(best, "ratingKey")
         };
         return rec.Guid is null ? null : rec;
+    }
+
+    /// <summary>
+    /// Binding key for a show name with any year removed: "Dark Matter 2024" (from a dated
+    /// filename) and "Dark Matter" (from its titleless siblings) must address the same binding.
+    /// </summary>
+    internal static string ShowBindingKey(string showName) => KeyOf(StripYearTokens(showName));
+
+    internal static string StripYearTokens(string showName) =>
+        System.Text.RegularExpressions.Regex.Replace(showName, @"\b(?:19|20)\d{2}\b", " ").Trim();
+
+    internal static bool ContainsYearToken(string showName) =>
+        System.Text.RegularExpressions.Regex.IsMatch(showName, @"(?<!\d)(?:19|20)\d{2}(?!\d)");
+
+    /// <summary>
+    /// Every search result that could plausibly be this show, in relevance order: exact normalised
+    /// title/slug matches plus names that differ only by a year suffix ("Dark Matter (2024)"
+    /// against "Dark Matter"). The set feeds the year and episode-title disambiguation, which
+    /// needs the rivals that plain PickShow would never return.
+    /// </summary>
+    internal static List<SidecarItem> GetShowCandidates(string searchJson, string showName)
+    {
+        var list = new List<SidecarItem>();
+        var target = NormalizeTitle(showName);
+        if (target.Length == 0) return list;
+
+        using var doc = JsonDocument.Parse(searchJson);
+        if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return list;
+        if (!mc.TryGetProperty("SearchResults", out var results)) return list;
+
+        foreach (var (md, _) in FlattenCandidates(results, "show"))
+        {
+            var guid = GetString(md, "guid");
+            if (guid is null) continue;
+            var t = NormalizeTitle(GetString(md, "title") ?? "");
+            var slug = NormalizeTitle(GetString(md, "slug") ?? "");
+            var matched =
+                (t.Length > 0 && (t == target || t.Contains(target) || target.Contains(t))) ||
+                (slug.Length > 0 && (slug == target || slug.Contains(target) || target.Contains(slug)));
+            if (matched)
+            {
+                list.Add(new SidecarItem
+                {
+                    Guid = guid,
+                    Title = GetString(md, "title"),
+                    RatingKey = GetString(md, "ratingKey")
+                });
+            }
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// The single candidate whose title carries the year from the filename ("Dark Matter 2024" for
+    /// a "dark.matter.2024.s02e06" file). Ambiguity (several, or none) answers null: the caller
+    /// keeps the plain pick and records no binding.
+    /// </summary>
+    internal static SidecarItem? PickShowByYear(IReadOnlyList<SidecarItem> candidates, string showName)
+    {
+        var year = System.Text.RegularExpressions.Regex.Match(showName, @"(?:19|20)\d{2}");
+        if (!year.Success) return null;
+
+        SidecarItem? match = null;
+        foreach (var c in candidates)
+        {
+            if (!(c.Title ?? "").Contains(year.Value)) continue;
+            if (match is not null) return null;
+            match = c;
+        }
+        return match;
+    }
+
+    /// <summary>Title of episode N in a season's episode list, or null when the number is absent.</summary>
+    internal static string? PickEpisodeTitle(string episodesJson, int episode)
+    {
+        using var doc = JsonDocument.Parse(episodesJson);
+        if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return null;
+        if (!mc.TryGetProperty("Metadata", out var arr)) return null;
+        foreach (var m in AsArray(arr))
+            if (GetInt(m, "index") == episode)
+                return GetString(m, "title");
+        return null;
+    }
+
+    /// <summary>
+    /// True when the filename's episode title and plex.tv's name the same episode: equal after
+    /// normalisation, or one containing the other once both are long enough to be distinctive -
+    /// a short fragment like "The" must not match every title it is a prefix of.
+    /// </summary>
+    internal static bool EpisodeTitleMatches(string parsedTitle, string actualTitle)
+    {
+        var p = NormalizeTitle(parsedTitle);
+        var a = NormalizeTitle(actualTitle);
+        if (p.Length == 0 || a.Length == 0) return false;
+        if (p == a) return true;
+        return p.Length >= 6 && a.Length >= 6 && (a.Contains(p) || p.Contains(a));
+    }
+
+    /// <summary>
+    /// Walks each candidate show to the parsed season/episode and keeps the one whose real episode
+    /// title matches the filename. Null when nothing matches or several do - the caller then falls
+    /// back to the plain exact-title pick and records no binding, because choosing would be a guess.
+    /// </summary>
+    internal static SidecarItem? VerifyByEpisodeTitle(
+        IReadOnlyList<SidecarItem> candidates, ParsedEpisodeName parsed, Func<string, string?> fetch)
+    {
+        SidecarItem? match = null;
+        foreach (var c in candidates)
+        {
+            if (string.IsNullOrEmpty(c.RatingKey)) continue;
+            string? title;
+            try
+            {
+                var seasonsJson = fetch(string.Format(ChildrenUrlFormat, c.RatingKey));
+                var seasonKey = seasonsJson is null ? null : PickSeasonKey(seasonsJson, parsed.Season);
+                var episodesJson = seasonKey is null ? null : fetch(DiscoverBase + seasonKey);
+                title = episodesJson is null ? null : PickEpisodeTitle(episodesJson, parsed.Episode);
+            }
+            catch
+            {
+                continue;
+            }
+            if (title is null || !EpisodeTitleMatches(parsed.EpisodeTitle, title)) continue;
+            if (match is not null && match.RatingKey != c.RatingKey) return null;
+            match = c;
+        }
+        return match;
     }
 
     /// <summary>Season children key ("/library/metadata/{rk}/children") for the given season number.</summary>
@@ -819,7 +1051,7 @@ var key = GetKey(item);
     internal static BackfillResult Backfill(IReadOnlyList<MediaItem> items)
     {
         var result = new BackfillResult();
-        foreach (var item in items)
+        foreach (var item in OrderLookupPasses(items))
         {
             result.Scanned++;
             var label = item.Title ?? item.FilePath ?? $"item {item.Id}";
@@ -866,6 +1098,34 @@ var key = GetKey(item);
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// Episodes whose filename carries a year or an episode title can be disambiguated with
+    /// confidence; they run first so their show binding exists before the titleless siblings of
+    /// the same show are looked up. The other way round, the titleless files would settle on the
+    /// plain exact-title pick first - and the wrong series wins that tie ("Dark Matter" 2015 vs
+    /// the 2024 one). Movies and unparsable names keep their relative order at the end.
+    /// </summary>
+    internal static List<MediaItem> OrderLookupPasses(IReadOnlyList<MediaItem> items)
+    {
+        var confident = new List<MediaItem>();
+        var rest = new List<MediaItem>();
+        foreach (var item in items)
+        {
+            if (item.Library is { Type: LibraryType.Show } &&
+                TvEpisodeName.Parse(item.FilePath ?? string.Empty) is { } parsed &&
+                (parsed.EpisodeTitle.Length > 0 || ContainsYearToken(parsed.ShowName)))
+            {
+                confident.Add(item);
+            }
+            else
+            {
+                rest.Add(item);
+            }
+        }
+        confident.AddRange(rest);
+        return confident;
     }
 
     /// <summary>

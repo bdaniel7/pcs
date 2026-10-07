@@ -9,3 +9,4 @@ obj/
 /Media/
 .vscode/
 plex-lookup-cache.json
+plex-show-bindings.json

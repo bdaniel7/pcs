@@ -86,7 +86,7 @@ public sealed class LibraryController : ControllerBase
             TotalSize = total.ToString(),
             LibrarySectionID = library.Id.ToString(),
             LibrarySectionTitle = library.Name,
-            Videos = items.Select(x => ToVideo(x, selections: _selections)).ToList()
+            Videos = items.Select(x => ToVideoEnriched(x, selections: _selections)).ToList()
         };
         return PlexResults.Container(this, result);
     }
@@ -112,7 +112,7 @@ public sealed class LibraryController : ControllerBase
             Size = recent.Count,
             MixedParents = "1",
             TotalSize = recent.Count.ToString(),
-            Videos = recent.Select(x => ToVideo(x, selections: _selections)).ToList()
+            Videos = recent.Select(x => ToVideoEnriched(x, selections: _selections)).ToList()
         });
     }
 
@@ -136,7 +136,7 @@ public sealed class LibraryController : ControllerBase
             LibrarySectionTitle = library.Name,
             MixedParents = "1",
             TotalSize = recent.Count.ToString(),
-            Videos = recent.Select(x => ToVideo(x, selections: _selections)).ToList()
+            Videos = recent.Select(x => ToVideoEnriched(x, selections: _selections)).ToList()
         });
     }
 
@@ -298,6 +298,29 @@ public sealed class LibraryController : ControllerBase
             },
             Media = { media }
         };
+    }
+
+    /// <summary>
+    /// A list row: the generated metadata overlaid with the cached official sidecar record, so
+    /// grid cards show the real title instead of the raw file name. The overlay is served strictly
+    /// from cache (no plex.tv fallback) because the client re-requests lists constantly and the
+    /// backfill keeps them covered; a miss simply keeps the file-name title.
+    /// </summary>
+    internal static XmlVideo ToVideoEnriched(
+        MediaItem x,
+        bool includeLibrarySection = true,
+        StreamSelectionStore? selections = null)
+    {
+        var video = ToVideo(x, includeLibrarySection, selections);
+        try
+        {
+            ExternalMetadata.Apply(x, video, allowNetwork: false);
+        }
+        catch (Exception)
+        {
+            // A broken record must not take the whole grid down; the file-name title is the fallback.
+        }
+        return video;
     }
 
     private static List<XmlStream> ReadStreams(MediaItem x, StreamSelectionStore? selections)
