@@ -72,6 +72,10 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Sidecar and lookup-cache files live in the web root of the content root (project dir in
+// dev, app dir when published) - never under the output directory's wwwroot.
+PlexCompatibleServer.Api.Controllers.ExternalMetadata.ContentRoot = builder.Environment.ContentRootPath;
+
 app.UseCors();
 
 // Browsable UI at /web/. The root path stays the Plex server-info response because

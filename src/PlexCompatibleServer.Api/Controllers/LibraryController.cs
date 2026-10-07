@@ -77,10 +77,13 @@ public sealed class LibraryController : ControllerBase
         var library = await _repo.GetLibraryAsync(libraryId, ct);
         if (library is null) return NotFound();
 
-        var items = await _repo.GetItemsAsync(libraryId, ct);
+        var all = await _repo.GetItemsAsync(libraryId, ct);
+        var items = ContainerPaging.Page(HttpContext, all, out var offset, out var total);
         var result = new XmlMediaContainer
         {
             Size = items.Count,
+            Offset = offset,
+            TotalSize = total.ToString(),
             LibrarySectionID = library.Id.ToString(),
             LibrarySectionTitle = library.Name,
             Videos = items.Select(x => ToVideo(x, selections: _selections)).ToList()

@@ -8,3 +8,4 @@ obj/
 *.db-wal
 /Media/
 .vscode/
+plex-lookup-cache.json

@@ -175,6 +175,18 @@ public sealed class XmlVideo
     [XmlAttribute("title")] public string Title { get; set; } = "";
     [XmlAttribute("titleSort")] public string TitleSort { get; set; } = "";
 
+    // Episode hierarchy: season/episode numbers plus the show/season breadcrumb the info screen
+    // renders above the episode title. Display strings only - the parent/grandparent KEY and
+    // RATINGKEY attributes are deliberately absent: they would carry plex.tv's foreign rating
+    // keys and the client follows them (/library/metadata/{key}/children), which cannot resolve
+    // locally. Left empty on movies (omitted from JSON, empty attributes in XML).
+    [XmlAttribute("index")] public string Index { get; set; } = "";
+    [XmlAttribute("parentIndex")] public string ParentIndex { get; set; } = "";
+    [XmlAttribute("parentTitle")] public string ParentTitle { get; set; } = "";
+    [XmlAttribute("parentType")] public string ParentType { get; set; } = "";
+    [XmlAttribute("grandparentTitle")] public string GrandparentTitle { get; set; } = "";
+    [XmlAttribute("grandparentType")] public string GrandparentType { get; set; } = "";
+
     /// <summary>Set on items returned inside a play queue; distinct from the library rating key.</summary>
     [XmlAttribute("playQueueItemID")] public string PlayQueueItemID { get; set; } = "";
     [XmlAttribute("studio")] public string Studio { get; set; } = "";

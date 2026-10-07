@@ -77,6 +77,7 @@ public sealed class MediaRepository : IMediaRepository
             if (!Directory.Exists(library.RootPath))
                 continue;
 
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".ts", ".m2ts", ".webm"
@@ -87,6 +88,8 @@ public sealed class MediaRepository : IMediaRepository
                 ct.ThrowIfCancellationRequested();
                 if (!extensions.Contains(Path.GetExtension(file)))
                     continue;
+
+                seen.Add(file);
 
                 var info = new FileInfo(file);
                 if (!info.Exists) continue;
@@ -121,6 +124,14 @@ public sealed class MediaRepository : IMediaRepository
                     await RefreshStreamsAsync(item, ct);
 
                 await RefreshArtworkAsync(item, info, wasNew || string.IsNullOrEmpty(item.PosterPath), ct);
+            }
+
+            // Rows whose file vanished (deleted or renamed) must go too - a renamed movie would
+            // otherwise leave a ghost item serving under its old path and identity.
+            foreach (var kv in existing)
+            {
+                if (!seen.Contains(kv.Key))
+                    db.Items.Remove(kv.Value);
             }
         }
 

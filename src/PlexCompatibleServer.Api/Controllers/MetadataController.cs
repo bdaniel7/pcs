@@ -13,9 +13,6 @@ public sealed class MetadataController : ControllerBase
     private readonly ServerOptions _options;
     private readonly StreamSelectionStore _selections;
 
-    // TEMPORARY DIAGNOSTIC - set when replaying an official body with regions of ours merged in.
-    private string? officialBody;
-
     public MetadataController(IMediaRepository repo, ServerOptions options, StreamSelectionStore selections)
     {
         _repo = repo;
@@ -32,28 +29,6 @@ public sealed class MetadataController : ControllerBase
     [Produces("application/xml", "application/json")]
     public async Task<IActionResult> Get(int id, CancellationToken ct)
     {
-        // TEMPORARY DIAGNOSTIC - delete once the movie detail path is understood.
-        // Replays the official Plex response bodies captured for this client, re-pointed at the
-        // requested rating key. If the detail screen renders from these bytes the fault is in the
-        // data we generate; if it still fails, the fault is not in the response body at all.
-if (OfficialReplay.ItemEnabled)
-        {
-            var rich = Request.Query.ContainsKey("includeExternalMetadata");
-            var body = await OfficialReplay.ReadAsync(rich ? "074" : "016");
-            if (body is not null)
-            {
-                body = body
-                    .Replace("\"/library/metadata/826", $"\"/library/metadata/{id}")
-                    .Replace("\"ratingKey\":\"826\"", $"\"ratingKey\":\"{id}\"")
-                    .Replace("\"ratingKey\": \"826\"", $"\"ratingKey\":\"{id}\"")
-                    .Replace("\"ratingKey\":826", $"\"ratingKey\":{id}");
-
-                // With no regions requested the official body is returned untouched.
-                if (OfficialReplay.MergeRegions.Count == 0) return Content(body, "application/json");
-                officialBody = body;
-            }
-        }
-
         var item = await _repo.GetItemAsync(id, ct);
         if (item is null) return NotFound();
 
@@ -81,12 +56,6 @@ if (OfficialReplay.ItemEnabled)
             MediaTagVersion = PlaybackState.MediaTagVersion,
             Videos = new List<XmlVideo> { video }
         };
-
-        if (officialBody is not null)
-        {
-            var merged = OfficialReplay.Merge(officialBody, PlexJson.Serialize(container));
-            if (merged is not null) return Content(merged, "application/json");
-        }
 
         return PlexResults.Container(this, container);
     }

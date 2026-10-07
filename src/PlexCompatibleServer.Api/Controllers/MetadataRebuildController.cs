@@ -4,8 +4,9 @@ namespace PlexCompatibleServer.Api.Controllers;
 
 /// <summary>
 /// On-demand run of the plex.tv metadata agent (normally triggered after each media scan):
-/// fills plex-metadata.json gaps for every movie no store covers. Episodes are skipped until an
-/// episode lookup exists. Re-running is cheap - covered items cost no network traffic.
+/// fills plex-metadata.json gaps for every movie no store covers and re-walks episodes whose
+/// records still lack the season/episode hierarchy. Re-running is cheap - covered items cost
+/// no network traffic.
 /// </summary>
 [ApiController]
 public sealed class MetadataRebuildController : ControllerBase

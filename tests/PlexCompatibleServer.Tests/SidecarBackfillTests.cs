@@ -59,7 +59,7 @@ public class SidecarBackfillTests
     }
 
     [Test]
-    public void Backfill_skips_covered_items_and_never_touches_episodes()
+    public void Backfill_skips_covered_items_and_gates_items_without_a_library()
     {
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         var sidecar = Path.Combine(wwwroot, "plex-metadata.json");

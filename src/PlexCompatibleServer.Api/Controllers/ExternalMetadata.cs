@@ -16,9 +16,22 @@ internal static class ExternalMetadata
 {
     private const string SidecarPath = "wwwroot/plex-metadata.json";
     private const string LookupCacheFileName = "plex-lookup-cache.json";
+
+    /// <summary>
+    /// Content root of the running app, set once at startup. Dev runs from the project directory
+    /// while binaries land in bin/ - without this, a wwwroot copy under the output directory
+    /// shadows the real files that static serving and tests read from the project directory.
+    /// </summary>
+    internal static string? ContentRoot { get; set; }
+    private const string DiscoverBase = "https://discover.provider.plex.tv";
     private const string SearchUrlFormat =
         "https://discover.provider.plex.tv/library/search?query={0}&type=1&limit=10&searchProviders=discover&searchTypes=movies";
+    // Show search: searchTypes=tv is the only variant plex.tv accepts (shows/show and a missing
+    // type all answer 400), and its results nest exactly like the movie search one.
+    private const string TvSearchUrlFormat =
+        "https://discover.provider.plex.tv/library/search?query={0}&type=2&limit=10&searchProviders=discover&searchTypes=tv";
     private const string DetailUrlFormat = "https://discover.provider.plex.tv/library/metadata/{0}";
+    private const string ChildrenUrlFormat = "https://discover.provider.plex.tv/library/metadata/{0}/children";
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
     private static readonly object CacheLock = new();
@@ -56,6 +69,11 @@ internal static class ExternalMetadata
 var key = GetKey(item);
         if (string.IsNullOrEmpty(key)) return;
 
+        // Fuzzy matching walks every cached record by title containment, which happily binds an
+        // episode filename to some unrelated movie. Episodes get exact-key lookups plus their own
+        // plex.tv lookup instead.
+        var isEpisode = item.Library is { Type: LibraryType.Show };
+
         var rec = Get(key);
         if (rec is null)
         {
@@ -89,19 +107,22 @@ var key = GetKey(item);
             rec ??= Get(KeyOf(baseName));
             var loose = System.Text.RegularExpressions.Regex.Replace(baseName.ToLowerInvariant(), "[^a-z0-9]+", "");
             rec ??= Get(loose);
-            rec ??= GetFuzzy(baseName);
-            rec ??= GetFuzzy(item.FilePath ?? string.Empty);
-            if (rec is null && !string.IsNullOrEmpty(item.FilePath))
+            if (!isEpisode)
             {
-                try
+                rec ??= GetFuzzy(baseName);
+                rec ??= GetFuzzy(item.FilePath ?? string.Empty);
+                if (rec is null && !string.IsNullOrEmpty(item.FilePath))
                 {
-                    rec ??= GetFuzzy(Path.GetDirectoryName(item.FilePath) ?? string.Empty);
-                    rec ??= GetFuzzy(Path.Combine(Path.GetDirectoryName(item.FilePath) ?? string.Empty, baseName));
+                    try
+                    {
+                        rec ??= GetFuzzy(Path.GetDirectoryName(item.FilePath) ?? string.Empty);
+                        rec ??= GetFuzzy(Path.Combine(Path.GetDirectoryName(item.FilePath) ?? string.Empty, baseName));
+                    }
+                    catch { }
                 }
-                catch { }
             }
         }
-        if (rec is null)
+        if (rec is null && !isEpisode)
         {
             rec ??= GetFuzzy(video.Title ?? string.Empty);
             rec ??= GetFuzzy(video.TitleSort ?? string.Empty);
@@ -133,6 +154,21 @@ var key = GetKey(item);
             }
         }
 
+        // A record written by the old scrape (or a pre-token lookup) carries the episode's content
+        // but no season/episode hierarchy - the info screen reads those fields - so re-walk the
+        // show once, after the token is known, and keep serving the old record if that fails.
+        if (rec is not null && isEpisode && _plexToken is not null &&
+            (rec.Index is null || rec.ParentTitle is null || rec.GrandparentTitle is null))
+        {
+            var fresh = FetchRecord(item);
+            if (fresh is not null)
+            {
+                rec = fresh;
+                var freshKey = GetKey(item);
+                if (!string.IsNullOrEmpty(freshKey)) PersistLookup(freshKey, rec);
+            }
+        }
+
         if (rec is null) return;
 
         // The sidecar carries the item's real Plex guid, which metadata.plex.tv can resolve.
@@ -158,6 +194,21 @@ var key = GetKey(item);
         // as title even when the sidecar/lookup knew the proper one.
         if (!string.IsNullOrEmpty(rec.Title)) video.Title = rec.Title;
         if (!string.IsNullOrEmpty(rec.TitleSort)) video.TitleSort = rec.TitleSort;
+
+        // Episode hierarchy: the SxxExx numbers and the show/season breadcrumb the info screen
+        // renders above the title. Display strings only - parentKey/parentRatingKey/grandparentKey
+        // are deliberately NOT emitted: they carry plex.tv's foreign rating keys, and the client
+        // follows them (/library/metadata/{key}/children), which cannot resolve locally (404).
+        if (!string.IsNullOrEmpty(rec.Index)) video.Index = rec.Index;
+        if (!string.IsNullOrEmpty(rec.ParentIndex)) video.ParentIndex = rec.ParentIndex;
+        if (!string.IsNullOrEmpty(rec.ParentTitle)) video.ParentTitle = rec.ParentTitle;
+        if (!string.IsNullOrEmpty(rec.ParentTitle) && video.ParentType.Length == 0)
+            video.ParentType = "season";
+        if (!string.IsNullOrEmpty(rec.GrandparentTitle))
+            video.GrandparentTitle = rec.GrandparentTitle;
+        if (!string.IsNullOrEmpty(rec.GrandparentTitle) && video.GrandparentType.Length == 0)
+            video.GrandparentType = "show";
+
         if (!string.IsNullOrEmpty(rec.Studio)) video.Studio = rec.Studio;
         if (!string.IsNullOrEmpty(rec.Year)) video.Year = rec.Year;
         if (!string.IsNullOrEmpty(rec.Summary)) video.Summary = rec.Summary;
@@ -432,6 +483,11 @@ var key = GetKey(item);
 
     private static string? ResolveSidecarPath()
     {
+        if (ContentRoot is not null)
+        {
+            var rooted = Path.Combine(ContentRoot, "wwwroot", "plex-metadata.json");
+            return File.Exists(rooted) ? rooted : null;
+        }
         var path = Path.Combine(AppContext.BaseDirectory, "wwwroot", "plex-metadata.json");
         if (File.Exists(path)) return path;
         path = Path.Combine(AppContext.BaseDirectory, "..", "wwwroot", "plex-metadata.json");
@@ -439,12 +495,17 @@ var key = GetKey(item);
         return File.Exists(SidecarPath) ? Path.GetFullPath(SidecarPath) : null;
     }
 
+    private static string PreferredSidecarPath() =>
+        ContentRoot is not null
+            ? Path.Combine(ContentRoot, "wwwroot", "plex-metadata.json")
+            : Path.Combine(AppContext.BaseDirectory, "wwwroot", "plex-metadata.json");
+
     private static string LookupCachePath()
     {
         var sidecar = ResolveSidecarPath();
         var dir = sidecar is not null
             ? Path.GetDirectoryName(sidecar)!
-            : Path.Combine(AppContext.BaseDirectory, "wwwroot");
+            : Path.GetDirectoryName(PreferredSidecarPath())!;
         return Path.Combine(dir, LookupCacheFileName);
     }
 
@@ -486,10 +547,11 @@ var key = GetKey(item);
     }
 
     /// <summary>
-    /// Resolves a movie's real plex.tv guid (and, when the client's token is known, full metadata)
+    /// Resolves an item's real plex.tv guid (and, when the client's token is known, full metadata)
     /// for items the sidecar has no record of. The LG client resolves the guid it receives against
     /// plex.tv and cannot open the detail page without one, so this runs synchronously once per
-    /// movie and is persisted to plex-lookup-cache.json.
+    /// item and is persisted to plex-lookup-cache.json. Movie libraries search + enrich from the
+    /// movie search endpoint; TV libraries walk show search -> season children -> episode list.
     /// </summary>
     internal static SidecarItem? LookupOnline(MediaItem item)
     {
@@ -509,10 +571,11 @@ var key = GetKey(item);
 
     /// <summary>
     /// Search + detail fetch without touching any store; shared by the runtime lookup and the
-    /// backfill command.
+    /// backfill command. Episodes take the plex.tv show-children path instead of the movie one.
     /// </summary>
     internal static SidecarItem? FetchRecord(MediaItem item)
     {
+        if (item.Library is { Type: LibraryType.Show }) return FetchEpisodeRecord(item);
         if (item.Library is not { Type: LibraryType.Movie }) return null;
         var title = CleanSearchTitle(item.FilePath ?? string.Empty);
         if (string.IsNullOrWhiteSpace(title)) return null;
@@ -541,12 +604,191 @@ var key = GetKey(item);
     }
 
     /// <summary>
+    /// Full episode record from plex.tv: parse the filename for show/season/episode, find the show
+    /// via search, then walk show -> season -> episode until the episode's own payload turns up
+    /// (title, summary, credits, hierarchy). Show-level genres/studio are merged from the show
+    /// detail because the episode payload does not carry them. Everything here works anonymously.
+    /// </summary>
+    internal static SidecarItem? FetchEpisodeRecord(MediaItem item)
+    {
+        var parsed = TvEpisodeName.Parse(item.FilePath ?? string.Empty);
+        if (parsed is null) return null;
+
+        var searchJson = Fetch(string.Format(TvSearchUrlFormat, Uri.EscapeDataString(parsed.ShowName)), false);
+        if (searchJson is null) return null;
+
+        var show = PickShow(searchJson, parsed.ShowName);
+        if (show?.RatingKey is null) return null;
+
+        var seasonsJson = Fetch(string.Format(ChildrenUrlFormat, show.RatingKey), true);
+        if (seasonsJson is null) return null;
+        var seasonKey = PickSeasonKey(seasonsJson, parsed.Season);
+        if (seasonKey is null) return null;
+
+        var episodesJson = Fetch(DiscoverBase + seasonKey, true);
+        if (episodesJson is null) return null;
+        var rec = PickEpisodeRecord(episodesJson, parsed.Episode, parsed);
+        if (rec is null) return null;
+
+        var showJson = Fetch(string.Format(DetailUrlFormat, show.RatingKey), false);
+        if (showJson is not null) MergeShowDetail(rec, showJson);
+
+        // The episode payload already is the detail: nothing left for the deferred enrich step.
+        rec.DetailChecked = true;
+        return rec;
+    }
+
+    /// <summary>
+    /// Picks the show from the type=2 search results: exact normalised title (or slug) first, else
+    /// the clearly-leading result above the 0.35 relevance floor. No year gate - filenames rarely
+    /// carry one, and the season/episode walk right after verifies the pick anyway.
+    /// </summary>
+    internal static SidecarItem? PickShow(string searchJson, string showName)
+    {
+        using var doc = JsonDocument.Parse(searchJson);
+        if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return null;
+        if (!mc.TryGetProperty("SearchResults", out var results)) return null;
+
+        var candidates = FlattenCandidates(results, "show");
+        if (candidates.Count == 0) return null;
+
+        var target = NormalizeTitle(showName);
+        JsonElement best = default;
+        var haveBest = false;
+        foreach (var (md, _) in candidates)
+        {
+            var t = GetString(md, "title");
+            var slug = GetString(md, "slug");
+            var tNorm = t is null ? null : NormalizeTitle(t);
+            var slugNorm = slug is null ? null : NormalizeTitle(slug);
+            if (tNorm == target || slugNorm == target)
+            {
+                best = md;
+                haveBest = true;
+                break;
+            }
+        }
+        if (!haveBest && candidates[0].Score is >= 0.35 &&
+            (candidates.Count == 1 || candidates[0].Score > candidates[1].Score))
+        {
+            best = candidates[0].Md;
+            haveBest = true;
+        }
+        if (!haveBest) return null;
+
+        var rec = new SidecarItem
+        {
+            Guid = GetString(best, "guid"),
+            Title = GetString(best, "title"),
+            RatingKey = GetString(best, "ratingKey")
+        };
+        return rec.Guid is null ? null : rec;
+    }
+
+    /// <summary>Season children key ("/library/metadata/{rk}/children") for the given season number.</summary>
+    internal static string? PickSeasonKey(string seasonsJson, int season)
+    {
+        using var doc = JsonDocument.Parse(seasonsJson);
+        if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return null;
+        if (!mc.TryGetProperty("Metadata", out var arr)) return null;
+        foreach (var m in AsArray(arr))
+            if (GetInt(m, "index") == season)
+                return GetString(m, "key");
+        return null;
+    }
+
+    /// <summary>
+    /// Builds the episode record from the season's episode list: everything the info screen shows
+    /// comes from this payload. A filename without an episode title falls back to the parsed one
+    /// and finally to "Episode N" - never the raw file stem.
+    /// </summary>
+    internal static SidecarItem? PickEpisodeRecord(string episodesJson, int episodeNumber, ParsedEpisodeName parsed)
+    {
+        using var doc = JsonDocument.Parse(episodesJson);
+        if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return null;
+        if (!mc.TryGetProperty("Metadata", out var arr)) return null;
+        JsonElement md = default;
+        foreach (var m in AsArray(arr))
+            if (GetInt(m, "index") == episodeNumber)
+            {
+                md = m;
+                break;
+            }
+        if (md.ValueKind == JsonValueKind.Undefined) return null;
+
+        var guid = GetString(md, "guid");
+        if (string.IsNullOrEmpty(guid)) return null;
+
+        var title = GetString(md, "title");
+        if (string.IsNullOrEmpty(title)) title = parsed.EpisodeTitle;
+        if (string.IsNullOrEmpty(title)) title = $"Episode {episodeNumber}";
+
+        var rec = new SidecarItem
+        {
+            Guid = guid,
+            RatingKey = GetString(md, "ratingKey"),
+            Title = title,
+            TitleSort = title,
+            Year = GetInt(md, "year")?.ToString(CultureInfo.InvariantCulture),
+            Summary = GetString(md, "summary"),
+            ContentRating = GetString(md, "contentRating"),
+            OriginallyAvailableAt = GetString(md, "originallyAvailableAt"),
+            AudienceRating = GetDouble(md, "audienceRating"),
+            Index = (GetInt(md, "index") ?? episodeNumber).ToString(CultureInfo.InvariantCulture),
+            ParentIndex = GetInt(md, "parentIndex")?.ToString(CultureInfo.InvariantCulture),
+            ParentTitle = GetString(md, "parentTitle"),
+            ParentKey = GetString(md, "parentKey"),
+            ParentRatingKey = GetString(md, "parentRatingKey"),
+            ParentGuid = GetString(md, "parentGuid"),
+            GrandparentTitle = GetString(md, "grandparentTitle"),
+            GrandparentKey = GetString(md, "grandparentKey"),
+            GrandparentRatingKey = GetString(md, "grandparentRatingKey"),
+            GrandparentGuid = GetString(md, "grandparentGuid")
+        };
+        if (md.TryGetProperty("Rating", out var ratings)) rec.Ratings = MapRatings(ratings);
+        if (md.TryGetProperty("Role", out var roles)) rec.Roles = MapPeople(roles);
+        if (md.TryGetProperty("Director", out var dirs)) rec.Directors = MapPeople(dirs);
+        if (md.TryGetProperty("Writer", out var ws)) rec.Writers = MapPeople(ws);
+        if (md.TryGetProperty("Producer", out var ps)) rec.Producers = MapPeople(ps);
+        if (md.TryGetProperty("Guid", out var gids)) rec.Guids = MapStrings(gids, "id");
+        return rec;
+    }
+
+    /// <summary>
+    /// Genres, countries and studio live on the show, not on the episode payload; merge them into
+    /// the episode record so the info screen shows the show's tags.
+    /// </summary>
+    private static void MergeShowDetail(SidecarItem rec, string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return;
+            if (!mc.TryGetProperty("Metadata", out var arr)) return;
+            JsonElement md = default;
+            foreach (var m in AsArray(arr)) { md = m; break; }
+            if (md.ValueKind == JsonValueKind.Undefined) return;
+
+            if (string.IsNullOrEmpty(rec.Studio)) rec.Studio = GetString(md, "studio");
+            rec.Genres ??= md.TryGetProperty("Genre", out var gs) ? MapStrings(gs, "tag") : null;
+            rec.Countries ??= md.TryGetProperty("Country", out var cs) ? MapStrings(cs, "tag") : null;
+        }
+        catch
+        {
+            // The episode record is already complete enough without the show-level tags.
+        }
+    }
+
+
+    /// <summary>
     /// True when any loaded store (sidecar or lookup cache) already covers this item.
     /// </summary>
     internal static bool HasRecord(MediaItem item) => TryGetRecord(item, out _);
 
     /// <summary>
     /// Finds the covering record (exact key first, then title/fuzzy fallbacks like Apply).
+    /// The fuzzy walk is movie-only: it matches by title containment and would happily bind an
+    /// episode filename to an unrelated film.
     /// </summary>
     internal static bool TryGetRecord(MediaItem item, out SidecarItem record)
     {
@@ -558,7 +800,11 @@ var key = GetKey(item);
             if (Get(title) is { } byTitle) { record = byTitle; return true; }
             if (Get(title.ToLowerInvariant()) is { } byLower) { record = byLower; return true; }
         }
-        if (GetFuzzy(title) is { } fuzzy) { record = fuzzy; return true; }
+        if (item.Library is not { Type: LibraryType.Show } && GetFuzzy(title) is { } fuzzy)
+        {
+            record = fuzzy;
+            return true;
+        }
         record = null!;
         return false;
     }
@@ -566,9 +812,9 @@ var key = GetKey(item);
     internal static bool TokenKnown => _plexToken is not null;
 
     /// <summary>
-    /// Fills sidecar gaps for every movie that no store covers: plex.tv search + detail per item,
-    /// written back into plex-metadata.json (atomic replace) and the in-memory cache. Episodes are
-    /// out of scope until an episode lookup exists.
+    /// Fills sidecar gaps for every item no store covers: plex.tv search + detail per movie,
+    /// show/season/episode walk per episode, written back into plex-metadata.json (atomic replace)
+    /// and the in-memory cache. Already-covered items are skipped without network traffic.
     /// </summary>
     internal static BackfillResult Backfill(IReadOnlyList<MediaItem> items)
     {
@@ -581,10 +827,15 @@ var key = GetKey(item);
             {
                 if (TryGetRecord(item, out var existing))
                 {
-                    // A record created before the client's token was known only has the guid -
-                    // once the token arrives, fetch the rich detail and merge it.
-                    if (!existing.DetailChecked && !string.IsNullOrEmpty(existing.RatingKey) &&
-                        TokenKnown)
+                    // Episodes the old scrape covered have content but no season/episode
+                    // hierarchy, and a guid-only record still awaits its detail: re-fetch both
+                    // once. A failed re-fetch keeps the existing record (Present), never Failed.
+                    var episodeMissingHierarchy = item.Library is { Type: LibraryType.Show } &&
+                        (existing.Index is null || existing.ParentTitle is null ||
+                         existing.GrandparentTitle is null);
+                    if (episodeMissingHierarchy ||
+                        (!existing.DetailChecked && !string.IsNullOrEmpty(existing.RatingKey) &&
+                         TokenKnown))
                     {
                         var enriched = FetchRecord(item);
                         var existingKey = GetKey(item);
@@ -625,8 +876,7 @@ var key = GetKey(item);
     {
         lock (CacheLock)
         {
-            var path = ResolveSidecarPath()
-                ?? Path.Combine(AppContext.BaseDirectory, "wwwroot", "plex-metadata.json");
+            var path = ResolveSidecarPath() ?? PreferredSidecarPath();
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var dict = new Dictionary<string, SidecarItem>(StringComparer.Ordinal);
             if (File.Exists(path))
@@ -854,7 +1104,8 @@ var key = GetKey(item);
     /// Flattens MediaContainer.SearchResults[].SearchResult[].Metadata[] in relevance order,
     /// carrying each SearchResult's score (present in live responses, absent in test fixtures).
     /// </summary>
-    private static List<(JsonElement Md, double? Score)> FlattenCandidates(JsonElement searchResults)
+    private static List<(JsonElement Md, double? Score)> FlattenCandidates(JsonElement searchResults,
+        string allowedType = "movie")
     {
         var list = new List<(JsonElement, double?)>();
         foreach (var sr in AsArray(searchResults))
@@ -875,7 +1126,7 @@ var key = GetKey(item);
                 foreach (var m in AsArray(md))
                 {
                     var t = GetString(m, "type");
-                    if (t is not null && t != "movie") continue;
+                    if (t is not null && t != allowedType) continue;
                     list.Add((m, score));
                 }
             }
@@ -991,6 +1242,18 @@ internal sealed class SidecarItem
     public UltraBlurRef? UltraBlur { get; set; }
     public CommonSenseRef? CommonSense { get; set; }
     public List<ReviewRef>? Reviews { get; set; }
+
+    // Episode hierarchy (show/season breadcrumb and SxxExx numbers); absent on movie records.
+    public string? Index { get; set; }
+    public string? ParentIndex { get; set; }
+    public string? ParentTitle { get; set; }
+    public string? ParentKey { get; set; }
+    public string? ParentRatingKey { get; set; }
+    public string? ParentGuid { get; set; }
+    public string? GrandparentTitle { get; set; }
+    public string? GrandparentKey { get; set; }
+    public string? GrandparentRatingKey { get; set; }
+    public string? GrandparentGuid { get; set; }
 }
 
 internal sealed class TagRef
