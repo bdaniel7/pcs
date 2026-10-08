@@ -38,6 +38,20 @@ Default URL: `http://0.0.0.0:32400`
 
 Set media roots in `appsettings.json`.
 
+## Install (Debian / Ubuntu / Raspberry Pi OS)
+
+```bash
+sudo bash install.sh --movies /path/to/Movies --tv /path/to/Shows
+```
+
+Dependencies (ffmpeg, ffprobe, .NET 10 SDK) are checked, not installed:
+if any are missing the script prints install instructions and exits.
+The script publishes to `/opt/plex-compatible-server`, creates a
+`plexcompat` service account, installs and starts a systemd unit on port
+32400, and writes library roots to `appsettings.Production.json` (kept on
+upgrade). Re-running it upgrades in place. Omit the flags to be prompted,
+or edit the config later and `sudo systemctl restart plex-compatible-server`.
+
 ## Example
 
 ```json
