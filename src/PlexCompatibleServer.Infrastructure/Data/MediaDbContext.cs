@@ -79,15 +79,20 @@ public sealed class MediaDbContext : DbContext
             ("Items", "OfficialPosterPath", "TEXT NULL"),
             ("Items", "OfficialArtPath", "TEXT NULL"),
             ("Items", "OfficialParentPosterPath", "TEXT NULL"),
-            ("Items", "OfficialGrandparentPosterPath", "TEXT NULL")
+            ("Items", "OfficialGrandparentPosterPath", "TEXT NULL"),
+            ("Items", "ContinueWatchingDismissedAt", "TEXT NULL")
         };
 
         foreach (var (table, column, definition) in additive)
         {
             if (await HasColumnAsync(table, column, ct)) continue;
 
+            // The statement is assembled from the fixed additive list above - table, column and
+            // definition are never user input - which EF1002 cannot prove about interpolation.
+#pragma warning disable EF1002
             await Database.ExecuteSqlRawAsync(
                 $"ALTER TABLE {table} ADD COLUMN {column} {definition}", ct);
+#pragma warning restore EF1002
         }
 
         // Newly added probe columns are null in existing rows, which is exactly the condition the

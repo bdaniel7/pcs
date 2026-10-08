@@ -34,6 +34,9 @@ var mediaArt = builder.Configuration.GetSection("Media:Art").Get<MediaArtOptions
 builder.Services.AddSingleton(mediaArt);
 builder.Services.AddSingleton<PosterGenerator>();
 builder.Services.AddSingleton<RemoteArtworkCache>();
+builder.Services.AddSingleton<ImageTranscoder>();
+// RemoteArtworkCache fetches through IHttpClientFactory instead of owning an HttpClient.
+builder.Services.AddHttpClient();
 
 var connectionString = builder.Configuration.GetConnectionString("Media")
     ?? "Data Source=media.db";

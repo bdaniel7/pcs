@@ -34,8 +34,10 @@ Implements the HTTP endpoints the Plex client workflow needs, answering in both 
   sidecar cache, and a wrong next-episode is worse than none).
 - **Play queues** — created and served in memory (`POST|PUT|GET /playQueues`).
 - **Artwork resolver** — `/photo/:/transcode` returns the correct slot (poster vs. wide backdrop
-  vs. season/show poster) per request and never 404s; a 1×1 placeholder stands in when no
-  artwork exists.
+  vs. season/show poster) per request, scaled to the exact `width`/`height` the client asked for
+  (lanczos, aspect preserved, cached by source+size so repaints are disk hits — the TV never has
+  to downscale a full-resolution original, which reads as grain), and never 404s; a 1×1
+  placeholder stands in when no artwork exists.
 - **Server identity** — `/` and `/identity` expose the configured name, machine identifier and a
   Plex-compatible version string; `X-Plex-Token` arriving at `/identity` is captured in memory
   (never persisted) for later metadata lookups.
@@ -79,7 +81,10 @@ Implements the HTTP endpoints the Plex client workflow needs, answering in both 
   guard prevents double counting from overlapping signals. `/:/scrobble` and `/:/unscrobble` are
   honored as well (the LG client simply never calls them).
 - **Continue Watching** — home and section hub surfaces list in-progress items ordered by
-  `lastViewedAt`, rendered through the same enriched list-row pipeline as the grids.
+  `lastViewedAt`, rendered through the same enriched list-row pipeline as the grids. The
+  long-press menu's `PUT /actions/removeFromContinueWatching` (advertised through
+  `/media/providers`) hides the card from every shelf without touching progress, resume point or
+  watch state; the next position report reverses the removal, bringing the card back.
 
 ## Playback (Direct Play)
 
@@ -124,10 +129,11 @@ Implements the HTTP endpoints the Plex client workflow needs, answering in both 
 - **Configuration** — server name, machine identifier, advertised version, library roots, art
   options and connection string all live in `appsettings.json`.
 - **Static caches** — metadata caches are served from `wwwroot` for easy inspection.
-- **Tests** — 138 automated tests (NUnit) covering paging, XML serialization, subtitle discovery,
+- **Tests** — 142 automated tests (NUnit) covering paging, XML serialization, subtitle discovery,
   sidecar parsing, filename parsing, metadata lookup, disambiguation, caching behavior, playback
-  progress (persistence, watched threshold, hubs) and official artwork (URL capture, download
-  cache, route preference, attribute emission).
+  progress (persistence, watched threshold, Continue Watching dismissal, hubs) and official
+  artwork (URL capture, download cache, route preference, attribute emission, fit math and
+  image-header probing).
 
 ## Scope & Limitations
 

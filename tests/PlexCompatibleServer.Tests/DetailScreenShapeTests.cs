@@ -1,11 +1,13 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using PlexCompatibleServer.Api.Controllers;
 using PlexCompatibleServer.Api.Options;
 using PlexCompatibleServer.Core.Interfaces;
 using PlexCompatibleServer.Core.Models;
+using PlexCompatibleServer.Infrastructure.Media;
 
 namespace PlexCompatibleServer.Tests;
 
@@ -110,9 +112,9 @@ public class DetailScreenShapeTests
         File.WriteAllBytes(art, new byte[] { 1, 2, 3 });
         var poster = Path.Combine(_artDir, "poster.jpg");
         File.WriteAllBytes(poster, new byte[] { 1, 2, 3 });
-        var controller = new PhotoController(BuildRepo(art, poster));
+        var controller = Photo(BuildRepo(art, poster));
 
-        var result = await controller.Transcode("/library/metadata/8/art/1790948816", 1232, 693, default)
+        var result = await controller.Transcode("/library/metadata/8/art/1790948816", 1232, 693, "")
             as PhysicalFileResult;
 
         Assert.That(result, Is.Not.Null);
@@ -126,14 +128,18 @@ public class DetailScreenShapeTests
         File.WriteAllBytes(art, new byte[] { 1, 2, 3 });
         var poster = Path.Combine(_artDir, "poster.jpg");
         File.WriteAllBytes(poster, new byte[] { 1, 2, 3 });
-        var controller = new PhotoController(BuildRepo(art, poster));
+        var controller = Photo(BuildRepo(art, poster));
 
-        var result = await controller.Transcode("/library/metadata/8/thumb/1790948816", 240, 360, default)
+        var result = await controller.Transcode("/library/metadata/8/thumb/1790948816", 240, 360, "")
             as PhysicalFileResult;
 
         Assert.That(result, Is.Not.Null);
         Assert.That(result!.FileName, Is.EqualTo(poster));
     }
+
+    private PhotoController Photo(FakeRepo repo) =>
+        new(repo, new ImageTranscoder(new MediaArtOptions { CacheDirectory = _artDir },
+            NullLogger<ImageTranscoder>.Instance));
 
     private static FakeRepo BuildRepo(string art, string poster)
     {
@@ -197,6 +203,9 @@ public class DetailScreenShapeTests
 
         public Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId, int limit, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<MediaItem>>([]);
+
+        public Task DismissFromContinueWatchingAsync(int id, CancellationToken ct)
+            => Task.CompletedTask;
 
         public Task SaveOfficialArtworkAsync(int id, string? posterPath, string? artPath, string? parentPosterPath,
                                              string? grandparentPosterPath, CancellationToken ct)

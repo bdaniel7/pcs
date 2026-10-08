@@ -84,4 +84,27 @@ public sealed class TimelineController : ControllerBase
         var match = Regex.Match(value, @"(\d+)$");
         return match.Success && int.TryParse(match.Groups[1].Value, out var id) ? id : 0;
     }
+
+    /// <summary>
+    /// The long-press menu's "Remove from continue watching", advertised through /media/providers.
+    /// The captured client calls it with PUT and ratingKey + identifier; the card must actually
+    /// leave the Continue Watching shelves, which is what the 404 used to prevent. Progress,
+    /// resume point and watch state stay untouched (real Plex keeps them too - the detail screen
+    /// still offers Resume); the next accepted timeline report reverses the removal.
+    /// </summary>
+    [HttpPut("/actions/removeFromContinueWatching")]
+    [Produces("application/xml", "application/json")]
+    public async Task<IActionResult> RemoveFromContinueWatching(
+        [FromQuery] string ratingKey = "",
+        [FromQuery] string identifier = "",
+        CancellationToken ct = default)
+    {
+        var id = ParseKey(ratingKey);
+        if (id > 0)
+        {
+            await _repo.DismissFromContinueWatchingAsync(id, ct);
+        }
+
+        return PlexResults.Empty(this);
+    }
 }

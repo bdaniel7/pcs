@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using PlexCompatibleServer.Core.Interfaces;
+using PlexCompatibleServer.Infrastructure.Media;
 
 namespace PlexCompatibleServer.Api.Controllers;
 
@@ -12,8 +13,10 @@ public sealed class PhotoController : ControllerBase
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
 
     private readonly IMediaRepository _repo;
+    private readonly ImageTranscoder _transcoder;
 
-    public PhotoController(IMediaRepository repo) => _repo = repo;
+    public PhotoController(IMediaRepository repo, ImageTranscoder transcoder) =>
+        (_repo, _transcoder) = (repo, transcoder);
 
     // Real Plex exposes the artwork resizer at /photo/:/transcode. The TV client asks for that exact
 // path for every poster it draws, and a 404 there breaks the screens that request it. The bare
@@ -24,13 +27,21 @@ public sealed class PhotoController : ControllerBase
         [FromQuery] string url = "",
         [FromQuery] int width = 0,
         [FromQuery] int height = 0,
+        [FromQuery] string upscale = "",
         CancellationToken ct = default)
     {
         var item = await ResolveItemAsync(url, ct);
 
         if (!string.IsNullOrEmpty(item) && System.IO.File.Exists(item))
         {
-            return PhysicalFile(item, ContentType(item));
+            // Serve the requested size, not the original: a client that downscales a 4K poster
+            // in its compositor makes it look grainy, and the endpoint promises width/height.
+            // Plex sends the flag as 1/0, so parse it as a string: binding a bool would make
+            // the model validator 400 every grid request.
+            var wantUpscale = upscale is "1" or "true";
+            var path = await _transcoder.ResizeAsync(item, width, height, wantUpscale, ct);
+
+            return PhysicalFile(path, ContentType(path));
         }
 
         // Never 404: clients treat a failed photo probe as a broken server.

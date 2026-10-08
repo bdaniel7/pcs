@@ -73,6 +73,12 @@ public sealed class MediaItem
     // Number of completed views (scrobbles / crossing the 90% watched threshold).
     public int ViewCount { get; set; }
 
+    // Set by PUT /actions/removeFromContinueWatching (the long-press menu's "Remove from
+    // continue watching"). Hides the card from every Continue Watching shelf while progress,
+    // resume point and watch state stay untouched. Any accepted timeline report clears it, so
+    // playing the item again brings the card back - matching Plex's reversible removal.
+    public DateTimeOffset? ContinueWatchingDismissedAt { get; set; }
+
     // Plex-compatible metadata fields
     public int? LibrarySectionId { get; set; }
     public int? ParentId { get; set; }

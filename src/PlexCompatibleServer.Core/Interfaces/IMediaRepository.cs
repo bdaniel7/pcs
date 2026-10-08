@@ -30,6 +30,14 @@ public interface IMediaRepository
     Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId, int limit, CancellationToken ct);
 
     /// <summary>
+    /// /actions/removeFromContinueWatching: hides the item from every Continue Watching shelf
+    /// without altering its progress, resume point or watch state. The next accepted timeline
+    /// report clears the dismissal, so playing the item brings the card back - matching Plex,
+    /// where removal is reversed by the next playthrough.
+    /// </summary>
+    Task DismissFromContinueWatchingAsync(int id, CancellationToken ct);
+
+    /// <summary>
     /// Stores the local paths of artwork downloaded from plex.tv. Any argument left null keeps
     /// the current value, so a partial sync (e.g. a show without a season poster) never erases
     /// what an earlier run found.

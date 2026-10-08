@@ -216,6 +216,54 @@ public class PlaybackProgressTests
     }
 
     [Test]
+    public async Task Remove_from_continue_watching_hides_the_shelf_but_keeps_progress()
+    {
+        var controller = TimelineFor(_repo);
+        await controller.Timeline(
+            ratingKey: _movie.Id, key: "", time: 36980, duration: 6416960,
+            state: "playing", playQueueItemID: 1);
+
+        var hub = new HubController(_repo, new ServerOptions())
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        static string? HubSize(System.Xml.Linq.XDocument doc)
+            => (string?)doc.Root!.Attribute("size");
+
+        var before = HubSize(System.Xml.Linq.XDocument.Parse(
+            ((ContentResult)await hub.HomeContinueWatching(CancellationToken.None)).Content!));
+        Assert.That(before, Is.EqualTo("1"), "the half-watched item starts on the shelf");
+
+        await controller.RemoveFromContinueWatching(
+            ratingKey: _movie.Id.ToString(), identifier: "com.plexapp.plugins.library");
+
+        var dismissed = await ReloadAsync(_movie.Id);
+        Assert.That(dismissed.ContinueWatchingDismissedAt, Is.Not.Null, "the dismissal must persist");
+        Assert.That(dismissed.ViewOffset, Is.EqualTo(36980), "removal must not touch the resume point");
+        Assert.That(dismissed.ViewCount, Is.Zero, "removal must not mark the item watched");
+
+        Assert.That(await _repo.GetInProgressAsync(null, 10, CancellationToken.None), Is.Empty,
+            "the dismissed card must leave every Continue Watching shelf");
+        var after = HubSize(System.Xml.Linq.XDocument.Parse(
+            ((ContentResult)await hub.HomeContinueWatching(CancellationToken.None)).Content!));
+        Assert.That(after, Is.EqualTo("0"));
+
+        // A buffering heartbeat at 0 is not the viewer playing the item and must not resurrect it.
+        await controller.Timeline(
+            ratingKey: _movie.Id, key: "", time: 0, duration: 6416960, state: "buffering");
+        Assert.That((await ReloadAsync(_movie.Id)).ContinueWatchingDismissedAt, Is.Not.Null);
+
+        // The next real position report reverses the removal, like on a real Plex server.
+        await controller.Timeline(
+            ratingKey: _movie.Id, key: "", time: 40000, duration: 6416960,
+            state: "playing", playQueueItemID: 1);
+        Assert.That((await ReloadAsync(_movie.Id)).ContinueWatchingDismissedAt, Is.Null);
+        Assert.That(await _repo.GetInProgressAsync(null, 10, CancellationToken.None), Has.Count.EqualTo(1),
+            "playing the item again must bring the card back");
+    }
+
+    [Test]
     public async Task Timeline_for_an_unknown_or_missing_key_is_harmless()
     {
         var controller = TimelineFor(_repo);

@@ -155,6 +155,9 @@ public sealed class MediaRepository : IMediaRepository
 
         item.ViewOffset = (int)Math.Min(clamped, int.MaxValue);
         item.LastViewedAt = viewedAt;
+        // Playing the item again reverses a "Remove from continue watching" dismissal: a
+        // buffering heartbeat at 0 never reaches this line, only a real position report does.
+        item.ContinueWatchingDismissedAt = null;
 
         // Crossing 90% counts a completed view - the LG client never sends /:/scrobble in
         // captured sessions, so this is the only thing that ever marks an item watched. The
@@ -204,6 +207,7 @@ public sealed class MediaRepository : IMediaRepository
         item.ViewOffset = null;
         item.LastViewedAt = null;
         item.ViewCount = 0;
+        item.ContinueWatchingDismissedAt = null;
 
         await db.SaveChangesAsync(ct);
     }
@@ -214,7 +218,8 @@ public sealed class MediaRepository : IMediaRepository
         var query = db.Items.AsNoTracking().Include(x => x.Library)
             .Where(x => x.ViewOffset != null && x.ViewOffset > 0
                 && x.DurationMs != null && x.DurationMs > 0
-                && x.ViewOffset < x.DurationMs * 0.9);
+                && x.ViewOffset < x.DurationMs * 0.9
+                && x.ContinueWatchingDismissedAt == null);
 
         if (libraryId is { } wanted) query = query.Where(x => x.LibraryId == wanted);
 
@@ -225,6 +230,16 @@ public sealed class MediaRepository : IMediaRepository
             .OrderByDescending(x => x.LastViewedAt)
             .Take(limit)
             .ToList();
+    }
+
+    public async Task DismissFromContinueWatchingAsync(int id, CancellationToken ct)
+    {
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (item is null) return;
+
+        item.ContinueWatchingDismissedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task SaveOfficialArtworkAsync(int id, string? posterPath, string? artPath, string? parentPosterPath,
