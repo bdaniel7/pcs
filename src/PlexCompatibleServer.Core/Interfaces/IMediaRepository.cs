@@ -28,4 +28,12 @@ public interface IMediaRepository
     /// threshold, newest first. Optionally restricted to one library.
     /// </summary>
     Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId, int limit, CancellationToken ct);
+
+    /// <summary>
+    /// Stores the local paths of artwork downloaded from plex.tv. Any argument left null keeps
+    /// the current value, so a partial sync (e.g. a show without a season poster) never erases
+    /// what an earlier run found.
+    /// </summary>
+    Task SaveOfficialArtworkAsync(int id, string? posterPath, string? artPath, string? parentPosterPath,
+                                  string? grandparentPosterPath, CancellationToken ct);
 }

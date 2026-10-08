@@ -187,6 +187,13 @@ public sealed class XmlVideo
     [XmlAttribute("grandparentTitle")] public string GrandparentTitle { get; set; } = "";
     [XmlAttribute("grandparentType")] public string GrandparentType { get; set; } = "";
 
+    // Season/show poster pointers, emitted only when official artwork has been downloaded for
+    // the episode: the season grid has no row of its own, so it draws from its episodes'
+    // parentThumb (season art) and the show cards from grandparentThumb (show art). Left empty
+    // on movies (omitted from JSON, empty attribute in XML).
+    [XmlAttribute("parentThumb")] public string ParentThumb { get; set; } = "";
+    [XmlAttribute("grandparentThumb")] public string GrandparentThumb { get; set; } = "";
+
     /// <summary>Set on items returned inside a play queue; distinct from the library rating key.</summary>
     [XmlAttribute("playQueueItemID")] public string PlayQueueItemID { get; set; } = "";
     [XmlAttribute("studio")] public string Studio { get; set; } = "";

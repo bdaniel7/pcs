@@ -38,6 +38,14 @@ public sealed class MediaItem
     public string? PosterPath { get; set; }
     public string? ArtPath { get; set; }
 
+    // Official artwork downloaded from plex.tv (poster/backdrop for movies, season/show posters
+    // for episodes). Null until the backfill sync has fetched them; serving prefers these over
+    // the frame-extracted PosterPath/ArtPath and falls back when the file has vanished.
+    public string? OfficialPosterPath { get; set; }
+    public string? OfficialArtPath { get; set; }
+    public string? OfficialParentPosterPath { get; set; }
+    public string? OfficialGrandparentPosterPath { get; set; }
+
     // Stream details from ffprobe. Kept on the item because the player needs them to decide
     // whether it can direct play a file without probing it again on every request.
     public int Bitrate { get; set; }

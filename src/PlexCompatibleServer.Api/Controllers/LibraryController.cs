@@ -287,6 +287,16 @@ public sealed class LibraryController : ControllerBase
             LibrarySectionKey = includeLibrarySection ? $"/library/sections/{x.LibraryId}" : "",
             Thumb = $"/library/metadata/{x.Id}/thumb/{timestamp}",
             Art = $"/library/metadata/{x.Id}/art/{timestamp}",
+            // Stated only once the official poster has actually been downloaded: an attr pointing
+            // at a route that has nothing to serve would leave the season/show card blank where
+            // the frame extract could still be used.
+            ParentThumb = !string.IsNullOrEmpty(x.OfficialParentPosterPath) ||
+                          !string.IsNullOrEmpty(x.OfficialGrandparentPosterPath)
+                ? $"/library/metadata/{x.Id}/parentThumb/{timestamp}"
+                : "",
+            GrandparentThumb = !string.IsNullOrEmpty(x.OfficialGrandparentPosterPath)
+                ? $"/library/metadata/{x.Id}/grandparentThumb/{timestamp}"
+                : "",
             Duration = x.DurationMs ?? 0,
             // Playback progress: empty (= absent in JSON) until the viewer has actually watched
             // part of the item. This is what the client reads to offer "Resume from ..." and to

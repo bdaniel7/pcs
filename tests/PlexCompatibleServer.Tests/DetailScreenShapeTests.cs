@@ -197,5 +197,9 @@ public class DetailScreenShapeTests
 
         public Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId, int limit, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<MediaItem>>([]);
+
+        public Task SaveOfficialArtworkAsync(int id, string? posterPath, string? artPath, string? parentPosterPath,
+                                             string? grandparentPosterPath, CancellationToken ct)
+            => Task.CompletedTask;
     }
 }

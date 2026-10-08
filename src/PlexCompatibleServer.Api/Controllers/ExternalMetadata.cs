@@ -992,7 +992,9 @@ internal static class ExternalMetadata {
                                   GrandparentTitle = GetString(md, "grandparentTitle"),
                                   GrandparentKey = GetString(md, "grandparentKey"),
                                   GrandparentRatingKey = GetString(md, "grandparentRatingKey"),
-                                  GrandparentGuid = GetString(md, "grandparentGuid")
+                                  GrandparentGuid = GetString(md, "grandparentGuid"),
+                                  ParentThumbUrl = GetString(md, "parentThumb"),
+                                  GrandparentThumbUrl = GetString(md, "grandparentThumb")
                               };
     if (md.TryGetProperty("Rating", out var ratings)) rec.Ratings = MapRatings(ratings);
     if (md.TryGetProperty("Role", out var roles)) rec.Roles = MapPeople(roles);
@@ -1008,8 +1010,8 @@ internal static class ExternalMetadata {
   /// Genres, countries and studio live on the show, not on the episode payload; merge them into
   /// the episode record so the info screen shows the show's tags.
   /// </summary>
-  private static void MergeShowDetail(SidecarItem rec,
-                                      string json) {
+  internal static void MergeShowDetail(SidecarItem rec,
+                                       string json) {
     try {
       using var doc = JsonDocument.Parse(json);
 
@@ -1028,6 +1030,13 @@ internal static class ExternalMetadata {
       if (string.IsNullOrEmpty(rec.Studio)) rec.Studio = GetString(md, "studio");
       rec.Genres ??= md.TryGetProperty("Genre", out var gs) ? MapStrings(gs, "tag") : null;
       rec.Countries ??= md.TryGetProperty("Country", out var cs) ? MapStrings(cs, "tag") : null;
+
+      // The episode payload already carries grandparentThumb; the show detail is the fallback
+      // when it did not.
+      if (string.IsNullOrEmpty(rec.GrandparentThumbUrl)) {
+        var showThumb = GetString(md, "thumb");
+        if (!string.IsNullOrEmpty(showThumb)) rec.GrandparentThumbUrl = showThumb;
+      }
     } catch {
       // The episode record is already complete enough without the show-level tags.
     }
@@ -1102,7 +1111,51 @@ internal static class ExternalMetadata {
                                         (existing.Index is null || existing.ParentTitle is null ||
                                          existing.GrandparentTitle is null);
 
+          // Records captured before artwork capture existed carry no remote URLs: refresh
+          // them so the poster/backdrop downloads have something to fetch. Movies only need
+          // their detail re-read (anonymous, no re-binding through search); episodes must
+          // re-walk the show to pick up parentThumb/grandparentThumb.
+          var movieMissingArtwork = item.Library is { Type: LibraryType.Movie } &&
+                                    (existing.ThumbUrl is null || existing.ArtUrl is null);
+
+          var episodeMissingArtwork = item.Library is { Type: LibraryType.Show } &&
+                                      (existing.ParentThumbUrl is null ||
+                                       existing.GrandparentThumbUrl is null);
+
+          if (movieMissingArtwork && !string.IsNullOrEmpty(existing.RatingKey)) {
+            var refreshed = false;
+
+            try {
+              var detailJson = Fetch(string.Format(DetailUrlFormat, existing.RatingKey), true);
+
+              if (detailJson is not null) {
+                EnrichFromDetail(existing, detailJson);
+                existing.DetailChecked = true;
+                refreshed = true;
+              }
+            } catch {
+              // Keep the record as it is; the next backfill tries again.
+            }
+
+            var artKey = GetKey(item);
+
+            if (refreshed && !string.IsNullOrEmpty(artKey)) {
+              UpsertSidecar(artKey, existing);
+              result.Enriched++;
+
+              continue;
+            }
+            result.Present++;
+
+            continue;
+          }
+
+          // Anything still reaching this branch is a movie whose record has no rating key
+          // (the detail-only path above already handled the others): the full search path
+          // re-binds it and captures the artwork URLs too.
           if (episodeMissingHierarchy ||
+              episodeMissingArtwork ||
+              movieMissingArtwork ||
               (!existing.DetailChecked && !string.IsNullOrEmpty(existing.RatingKey) &&
                TokenKnown)) {
             var enriched = FetchRecord(item);
@@ -1329,7 +1382,9 @@ internal static class ExternalMetadata {
                                   TitleSort = GetString(best, "title"),
                                   Year = GetInt(best, "year")?.ToString(CultureInfo.InvariantCulture),
                                   OriginallyAvailableAt = GetString(best, "originallyAvailableAt"),
-                                  RatingKey = GetString(best, "ratingKey")
+                                  RatingKey = GetString(best, "ratingKey"),
+                                  ThumbUrl = GetString(best, "thumb"),
+                                  ArtUrl = GetString(best, "art")
                               };
 
     return rec.Guid is null ? null : rec;
@@ -1405,6 +1460,12 @@ internal static class ExternalMetadata {
     if (md.TryGetProperty("Country", out var cs)) rec.Countries = MapStrings(cs, "tag");
     if (md.TryGetProperty("Genre", out var gs)) rec.Genres = MapStrings(gs, "tag");
     if (md.TryGetProperty("Guid", out var gids)) rec.Guids = MapStrings(gids, "id");
+
+    // Detail is authoritative over the search payload PickCandidate may have filled in.
+    var thumb = GetString(md, "thumb");
+    if (!string.IsNullOrEmpty(thumb)) rec.ThumbUrl = thumb;
+    var backdrop = GetString(md, "art");
+    if (!string.IsNullOrEmpty(backdrop)) rec.ArtUrl = backdrop;
   }
 
   private static string? Fetch(string url,
@@ -1624,6 +1685,17 @@ internal sealed class SidecarItem {
   public string? GrandparentRatingKey { get; set; }
 
   public string? GrandparentGuid { get; set; }
+
+  // Remote artwork URLs from plex.tv: thumb/art are the movie's own poster/backdrop, while
+  // parentThumbUrl/grandparentThumbUrl are the season and show posters carried by episode
+  // payloads. The backfill sync downloads them into the art cache; nothing serves URLs directly.
+  public string? ThumbUrl { get; set; }
+
+  public string? ArtUrl { get; set; }
+
+  public string? ParentThumbUrl { get; set; }
+
+  public string? GrandparentThumbUrl { get; set; }
 }
 
 internal sealed class TagRef {

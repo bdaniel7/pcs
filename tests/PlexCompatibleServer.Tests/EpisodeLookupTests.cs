@@ -87,8 +87,10 @@ public class EpisodeLookupTests
         "title": "Come Home", "summary": "First episode summary.",
         "parentIndex": 6, "parentTitle": "Season 6", "parentKey": "/library/metadata/S6",
         "parentRatingKey": "S6", "parentGuid": "plex://season/S6",
+        "parentThumb": "https://image.tmdb.org/t/p/original/season6-poster.jpg",
         "grandparentTitle": "Slow Horses", "grandparentKey": "/library/metadata/SHOWRK",
         "grandparentRatingKey": "SHOWRK", "grandparentGuid": "plex://show/REALSHOW",
+        "grandparentThumb": "https://metadata-static.plex.tv/show-poster.jpg",
         "year": 2025, "originallyAvailableAt": "2025-09-24", "contentRating": "TV-MA",
         "audienceRating": 7.4 },
       { "index": 2, "guid": "plex://episode/EP2", "ratingKey": "EP2RK",
@@ -127,6 +129,33 @@ public class EpisodeLookupTests
         Assert.That(rec.GrandparentKey, Is.EqualTo("/library/metadata/SHOWRK"));
         Assert.That(rec.GrandparentRatingKey, Is.EqualTo("SHOWRK"));
         Assert.That(rec.GrandparentGuid, Is.EqualTo("plex://show/REALSHOW"));
+
+        // Season/show posters ride on the episode payload; the artwork sync downloads them.
+        Assert.That(rec.ParentThumbUrl, Is.EqualTo("https://image.tmdb.org/t/p/original/season6-poster.jpg"));
+        Assert.That(rec.GrandparentThumbUrl, Is.EqualTo("https://metadata-static.plex.tv/show-poster.jpg"));
+    }
+
+    private const string ShowDetailJson = """
+    { "MediaContainer": { "Metadata": [
+      { "guid": "plex://show/REALSHOW", "title": "Slow Horses",
+        "studio": "Apple TV+", "thumb": "https://metadata-static.plex.tv/show-poster.jpg",
+        "Genre": [ { "id": "1", "tag": "Drama" } ] }
+    ] } }
+    """;
+
+    [Test]
+    public void MergeShowDetail_captures_show_poster_without_overwriting_the_episode_one()
+    {
+        var missing = new SidecarItem { Title = "Come Home" };
+        ExternalMetadata.MergeShowDetail(missing, ShowDetailJson);
+        Assert.That(missing.GrandparentThumbUrl,
+            Is.EqualTo("https://metadata-static.plex.tv/show-poster.jpg"));
+        Assert.That(missing.Studio, Is.EqualTo("Apple TV+"));
+
+        var captured = new SidecarItem { GrandparentThumbUrl = "https://example/existing.jpg" };
+        ExternalMetadata.MergeShowDetail(captured, ShowDetailJson);
+        Assert.That(captured.GrandparentThumbUrl, Is.EqualTo("https://example/existing.jpg"),
+            "the episode payload's grandparentThumb must win over the show detail fallback");
     }
 
     [Test]

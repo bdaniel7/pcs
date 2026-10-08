@@ -67,25 +67,31 @@ public sealed class MetadataController : ControllerBase
     // Plex appends an updatedAt cache-buster to every image URL. Accept it with or without.
     [HttpGet("/library/metadata/{id:int}/thumb")]
     [HttpGet("/library/metadata/{id:int}/thumb/{cacheBuster}")]
-    public async Task<IActionResult> Thumb(int id, CancellationToken ct)
-    {
-        var item = await _repo.GetItemAsync(id, ct);
-        if (item is null || string.IsNullOrEmpty(item.PosterPath) || !System.IO.File.Exists(item.PosterPath))
-            return NotFound();
-
-        return PhysicalFile(item.PosterPath, GetContentType(item.PosterPath));
-    }
+    public Task<IActionResult> Thumb(int id, CancellationToken ct) =>
+        ServeImageAsync(id, item => FirstExisting(item.OfficialPosterPath, item.PosterPath), ct);
 
     [HttpGet("/library/metadata/{id:int}/art")]
     [HttpGet("/library/metadata/{id:int}/art/{cacheBuster}")]
-    public async Task<IActionResult> Art(int id, CancellationToken ct)
-    {
-        var item = await _repo.GetItemAsync(id, ct);
-        if (item is null || string.IsNullOrEmpty(item.ArtPath) || !System.IO.File.Exists(item.ArtPath))
-            return NotFound();
+    public Task<IActionResult> Art(int id, CancellationToken ct) =>
+        ServeImageAsync(id, item => FirstExisting(item.OfficialArtPath, item.ArtPath), ct);
 
-        return PhysicalFile(item.ArtPath, GetContentType(item.ArtPath));
-    }
+    // Season poster pointer carried on episode rows (real Plex states parentThumb/grandparentThumb
+    // on episodes; the season grid has no row of its own and renders from these). Chains into the
+    // official show poster and finally the frame extract so the request never comes up empty.
+    [HttpGet("/library/metadata/{id:int}/parentThumb")]
+    [HttpGet("/library/metadata/{id:int}/parentThumb/{cacheBuster}")]
+    public Task<IActionResult> ParentThumb(int id, CancellationToken ct) =>
+        ServeImageAsync(id, item => FirstExisting(item.OfficialParentPosterPath,
+                                                  item.OfficialGrandparentPosterPath,
+                                                  item.OfficialPosterPath,
+                                                  item.PosterPath, item.ArtPath), ct);
+
+    [HttpGet("/library/metadata/{id:int}/grandparentThumb")]
+    [HttpGet("/library/metadata/{id:int}/grandparentThumb/{cacheBuster}")]
+    public Task<IActionResult> GrandparentThumb(int id, CancellationToken ct) =>
+        ServeImageAsync(id, item => FirstExisting(item.OfficialGrandparentPosterPath,
+                                                  item.OfficialPosterPath,
+                                                  item.PosterPath, item.ArtPath), ct);
 
     [HttpGet("/library/metadata/{id:int}/squareArt")]
     [HttpGet("/library/metadata/{id:int}/squareArt/{cacheBuster}")]
@@ -94,6 +100,28 @@ public sealed class MetadataController : ControllerBase
     [HttpGet("/library/metadata/{id:int}/clearLogo")]
     [HttpGet("/library/metadata/{id:int}/clearLogo/{cacheBuster}")]
     public IActionResult ClearLogo() => NotFound();
+
+    /// <summary>First path of the chain that still exists on disk, else 404.</summary>
+    private async Task<IActionResult> ServeImageAsync(int id, Func<MediaItem, string?> pick,
+                                                      CancellationToken ct)
+    {
+        var item = await _repo.GetItemAsync(id, ct);
+        if (item is null) return NotFound();
+
+        var path = pick(item);
+        if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return NotFound();
+
+        return PhysicalFile(path, GetContentType(path));
+    }
+
+    private static string? FirstExisting(params string?[] paths)
+    {
+        foreach (var path in paths)
+            if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+                return path;
+
+        return null;
+    }
 
     private static string GetContentType(string path) =>
         Path.GetExtension(path).ToLowerInvariant() switch

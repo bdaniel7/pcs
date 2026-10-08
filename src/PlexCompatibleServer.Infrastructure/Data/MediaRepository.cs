@@ -227,6 +227,21 @@ public sealed class MediaRepository : IMediaRepository
             .ToList();
     }
 
+    public async Task SaveOfficialArtworkAsync(int id, string? posterPath, string? artPath, string? parentPosterPath,
+                                               string? grandparentPosterPath, CancellationToken ct)
+    {
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (item is null) return;
+
+        if (!string.IsNullOrEmpty(posterPath)) item.OfficialPosterPath = posterPath;
+        if (!string.IsNullOrEmpty(artPath)) item.OfficialArtPath = artPath;
+        if (!string.IsNullOrEmpty(parentPosterPath)) item.OfficialParentPosterPath = parentPosterPath;
+        if (!string.IsNullOrEmpty(grandparentPosterPath)) item.OfficialGrandparentPosterPath = grandparentPosterPath;
+
+        await db.SaveChangesAsync(ct);
+    }
+
     /// <summary>
     /// Reads codec/resolution detail with ffprobe. When ffprobe is unavailable the managed duration
     /// probe still leaves DurationMs populated, so the library lists correctly even without it.

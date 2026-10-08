@@ -32,7 +32,9 @@ public class SidecarLookupTests
               { "type": "movie", "guid": "plex://movie/NEARYEAR", "title": "Little Lorraine",
                 "year": 2026, "ratingKey": "13" },
               { "type": "movie", "guid": "plex://movie/EXACTYEAR", "title": "Little Lorraine",
-                "year": 2025, "ratingKey": "14", "originallyAvailableAt": "2025-09-19" }
+                "year": 2025, "ratingKey": "14", "originallyAvailableAt": "2025-09-19",
+                "thumb": "https://image.tmdb.org/t/p/original/search-poster.jpg",
+                "art": "https://image.tmdb.org/t/p/original/search-art.jpg" }
             ] }
           ] },
           { "SearchResult": { "Metadata": { "type": "episode", "guid": "plex://episode/x",
@@ -53,6 +55,11 @@ public class SidecarLookupTests
         Assert.That(rec.Title, Is.EqualTo("Little Lorraine"));
         Assert.That(rec.Year, Is.EqualTo("2025"));
         Assert.That(rec.OriginallyAvailableAt, Is.EqualTo("2025-09-19"));
+
+        // The search payload already carries the remote poster/backdrop, so a record that never
+        // gets its detail fetched (no token) can still download artwork.
+        Assert.That(rec.ThumbUrl, Is.EqualTo("https://image.tmdb.org/t/p/original/search-poster.jpg"));
+        Assert.That(rec.ArtUrl, Is.EqualTo("https://image.tmdb.org/t/p/original/search-art.jpg"));
     }
 
     [Test]
@@ -122,6 +129,8 @@ public class SidecarLookupTests
             "contentRating": "R",
             "originallyAvailableAt": "2025-09-19",
             "audienceRating": "",
+            "thumb": "https://metadata-static.plex.tv/detail-poster.jpg",
+            "art": "https://image.tmdb.org/t/p/original/detail-art.jpg",
             "Rating": [
               { "image": "imdb://image.rating", "type": "imdb", "value": "6.8" },
               { "image": "rottentomatoes://image.rating.ripe", "type": "rt", "value": "91" }
@@ -210,7 +219,14 @@ public class SidecarLookupTests
     [Test]
     public void EnrichFromDetail_maps_all_fields_and_tolerates_empty_ratings()
     {
-        var rec = new SidecarItem { Guid = "plex://movie/OLD", Title = "old title", Year = "2020" };
+        var rec = new SidecarItem
+        {
+            Guid = "plex://movie/OLD",
+            Title = "old title",
+            Year = "2020",
+            ThumbUrl = "https://stale.example/poster.jpg",
+            ArtUrl = "https://stale.example/art.jpg"
+        };
         ExternalMetadata.EnrichFromDetail(rec, DetailJson);
 
         Assert.That(rec.Guid, Is.EqualTo("plex://movie/657d04943fedcb6d9c4d23c0"));
@@ -243,6 +259,10 @@ public class SidecarLookupTests
         Assert.That(rec.Genres, Is.EqualTo(new[] { "Crime", "Comedy" }));
         Assert.That(rec.Countries, Is.EqualTo(new[] { "United States" }));
         Assert.That(rec.Guids, Is.EqualTo(new[] { "imdb://tt0000001", "tmdb://12345" }));
+
+        // Detail is authoritative: it overwrites whatever the search payload captured earlier.
+        Assert.That(rec.ThumbUrl, Is.EqualTo("https://metadata-static.plex.tv/detail-poster.jpg"));
+        Assert.That(rec.ArtUrl, Is.EqualTo("https://image.tmdb.org/t/p/original/detail-art.jpg"));
     }
 
     [Test]

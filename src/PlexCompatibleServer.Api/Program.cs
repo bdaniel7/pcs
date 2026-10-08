@@ -33,6 +33,7 @@ var mediaArt = builder.Configuration.GetSection("Media:Art").Get<MediaArtOptions
 // so a rescan of a large library cannot spawn a ffmpeg process per file at once.
 builder.Services.AddSingleton(mediaArt);
 builder.Services.AddSingleton<PosterGenerator>();
+builder.Services.AddSingleton<RemoteArtworkCache>();
 
 var connectionString = builder.Configuration.GetConnectionString("Media")
     ?? "Data Source=media.db";

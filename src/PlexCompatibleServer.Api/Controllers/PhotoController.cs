@@ -50,12 +50,35 @@ public sealed class PhotoController : ControllerBase
         // The url names the slot the caller wants: /art/ is the wide backdrop, /thumb/ the portrait
         // poster. A capture of a working session shows the TV asking for a 1232x693 backdrop and
         // receiving exactly that; answering with the 600x900 poster instead hands the detail screen
-        // a 2:3 image where it expects 16:9.
-        var wantsArt = System.Text.RegularExpressions.Regex.IsMatch(
-            url, @"/art/", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        // a 2:3 image where it expects 16:9. parentThumb/grandparentThumb carry the season and show
+        // posters for episode rows; each chain ends in the frame extract so the never-404 promise
+        // holds even before official artwork has been downloaded.
+        var wantsArt = Slot(url, "/art/");
+        var wantsGrandparent = Slot(url, "/grandparentthumb/");
+        var wantsParent = Slot(url, "/parentthumb/");
 
-        if (wantsArt) return item.ArtPath ?? item.PosterPath ?? "";
-        return item.PosterPath ?? item.ArtPath ?? "";
+        if (wantsGrandparent)
+            return FirstExisting(item.OfficialGrandparentPosterPath, item.OfficialPosterPath,
+                                 item.PosterPath, item.ArtPath);
+        if (wantsParent)
+            return FirstExisting(item.OfficialParentPosterPath, item.OfficialGrandparentPosterPath,
+                                 item.OfficialPosterPath, item.PosterPath, item.ArtPath);
+        if (wantsArt)
+            return FirstExisting(item.OfficialArtPath, item.ArtPath, item.PosterPath);
+        return FirstExisting(item.OfficialPosterPath, item.PosterPath, item.ArtPath);
+    }
+
+    private static bool Slot(string url, string slot) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            url, slot, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private static string FirstExisting(params string?[] paths)
+    {
+        foreach (var path in paths)
+            if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+                return path;
+
+        return "";
     }
 
     private static string ContentType(string path) =>

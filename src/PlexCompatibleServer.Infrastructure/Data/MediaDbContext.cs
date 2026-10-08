@@ -75,7 +75,11 @@ public sealed class MediaDbContext : DbContext
             ("Items", "UserSquareArtUrl", "TEXT NULL"),
             ("Items", "ViewOffset", "INTEGER NULL"),
             ("Items", "LastViewedAt", "TEXT NULL"),
-            ("Items", "ViewCount", "INTEGER NOT NULL DEFAULT 0")
+            ("Items", "ViewCount", "INTEGER NOT NULL DEFAULT 0"),
+            ("Items", "OfficialPosterPath", "TEXT NULL"),
+            ("Items", "OfficialArtPath", "TEXT NULL"),
+            ("Items", "OfficialParentPosterPath", "TEXT NULL"),
+            ("Items", "OfficialGrandparentPosterPath", "TEXT NULL")
         };
 
         foreach (var (table, column, definition) in additive)
