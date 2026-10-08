@@ -138,6 +138,95 @@ public sealed class MediaRepository : IMediaRepository
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task SaveProgressAsync(int id, long timeMs, long durationMs, DateTimeOffset viewedAt, CancellationToken ct)
+    {
+        // A buffering heartbeat at 0 arrives right when playback restarts for a resume; storing
+        // it would erase exactly the point we are about to resume from.
+        if (timeMs <= 0) return;
+
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (item is null) return;
+
+        var effectiveDuration = durationMs > 0 ? durationMs : item.DurationMs ?? 0;
+        var clamped = effectiveDuration > 0 ? Math.Min(timeMs, effectiveDuration) : timeMs;
+        var previousOffset = item.ViewOffset ?? 0;
+        var lastViewed = item.LastViewedAt;
+
+        item.ViewOffset = (int)Math.Min(clamped, int.MaxValue);
+        item.LastViewedAt = viewedAt;
+
+        // Crossing 90% counts a completed view - the LG client never sends /:/scrobble in
+        // captured sessions, so this is the only thing that ever marks an item watched. The
+        // same-session guard keeps the heartbeats that follow the crossing from counting the
+        // watch again; a genuinely new completion arrives more than 10 minutes after the last
+        // report or from an offset below the threshold.
+        if (effectiveDuration > 0 && clamped >= effectiveDuration * 0.9)
+        {
+            var sameSession = previousOffset >= effectiveDuration * 0.9
+                && lastViewed is { } last
+                && viewedAt - last < TimeSpan.FromMinutes(10);
+            if (!sameSession) item.ViewCount++;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task MarkWatchedAsync(int id, DateTimeOffset viewedAt, CancellationToken ct)
+    {
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (item is null) return;
+
+        var duration = item.DurationMs ?? 0;
+        var previousOffset = item.ViewOffset ?? 0;
+        var lastViewed = item.LastViewedAt;
+
+        // The client scrobbling right after the 90% timeline rule already counted the watch
+        // must not count it twice (see SaveProgressAsync).
+        var sameSession = duration > 0 && previousOffset >= duration * 0.9
+            && lastViewed is { } last
+            && viewedAt - last < TimeSpan.FromMinutes(10);
+        if (!sameSession) item.ViewCount++;
+
+        item.LastViewedAt = viewedAt;
+        if (duration > 0) item.ViewOffset = duration;
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task ClearProgressAsync(int id, CancellationToken ct)
+    {
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (item is null) return;
+
+        item.ViewOffset = null;
+        item.LastViewedAt = null;
+        item.ViewCount = 0;
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId, int limit, CancellationToken ct)
+    {
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        var query = db.Items.AsNoTracking().Include(x => x.Library)
+            .Where(x => x.ViewOffset != null && x.ViewOffset > 0
+                && x.DurationMs != null && x.DurationMs > 0
+                && x.ViewOffset < x.DurationMs * 0.9);
+
+        if (libraryId is { } wanted) query = query.Where(x => x.LibraryId == wanted);
+
+        // Ordering by DateTimeOffset has no SQLite translation, so the sort happens in memory.
+        // The match set is a handful of rows out of a personal library, so this costs nothing.
+        var matches = await query.ToListAsync(ct);
+        return matches
+            .OrderByDescending(x => x.LastViewedAt)
+            .Take(limit)
+            .ToList();
+    }
+
     /// <summary>
     /// Reads codec/resolution detail with ffprobe. When ffprobe is unavailable the managed duration
     /// probe still leaves DurationMs populated, so the library lists correctly even without it.

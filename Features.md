@@ -28,8 +28,9 @@ Implements the HTTP endpoints the Plex client workflow needs, answering in both 
   `recentlyAdded`, detail (`/library/metadata/{id}`), season/episode children, and the image slots
   (`thumb`, `art`, `squareArt`, `clearLogo`, with cache busters).
 - **Hubs** — home hubs, section hubs, promoted hub, and related-items hub, all enriched with real
-  cached metadata (official titles, episode hierarchy). *Continue Watching* and *On Deck* are
-  present as empty hubs (playback progress is not persisted).
+  cached metadata (official titles, episode hierarchy). *Continue Watching* lists items with saved
+  playback progress (newest first); *On Deck* stays empty (episode ordering lives only in the
+  sidecar cache, and a wrong next-episode is worse than none).
 - **Play queues** — created and served in memory (`POST|PUT|GET /playQueues`).
 - **Artwork resolver** — `/photo/:/transcode` returns the correct slot (poster vs. wide backdrop)
   per request and never 404s; a 1×1 placeholder stands in when no artwork exists.
@@ -59,6 +60,20 @@ Implements the HTTP endpoints the Plex client workflow needs, answering in both 
 - **Backfill pipeline** — runs automatically after every media scan and on demand via
   `GET|POST /admin/metadata/backfill`; reports scanned / present / created / enriched / failed.
 
+## Playback Progress
+
+- **Timeline persistence** — `GET /:/timeline` stores the reported position (`time`/`duration`,
+  milliseconds) per item; zero-time buffering heartbeats are ignored so a resume-seek cannot
+  clobber the saved position. Positions survive server restarts and rescans.
+- **Metadata emission** — detail, grid, hub and play-queue responses expose `viewOffset` (ms),
+  `viewCount` and `lastViewedAt` (unix seconds) as unquoted JSON numbers / XML attributes.
+- **Watched detection** — the client never sends explicit watched flags beyond position reports, so
+  an item is marked watched when progress crosses 90% of its duration; a 10-minute same-session
+  guard prevents double counting from overlapping signals. `/:/scrobble` and `/:/unscrobble` are
+  honored as well (the LG client simply never calls them).
+- **Continue Watching** — home and section hub surfaces list in-progress items ordered by
+  `lastViewedAt`, rendered through the same enriched list-row pipeline as the grids.
+
 ## Playback (Direct Play)
 
 - **HTTP range streaming** — `GET /library/parts/{id}/...` and stream endpoints serve the file with
@@ -68,8 +83,6 @@ Implements the HTTP endpoints the Plex client workflow needs, answering in both 
   `501` explaining that only direct play is supported.
 - **Track selection** — `PUT /library/parts/{partId}` stores the chosen audio/subtitle stream for
   the session and is honored by subtitle requests.
-- **Timeline & scrobble** — accepted and acknowledged (no-op) so client playback flows are not
-  interrupted by errors.
 
 ## Subtitles
 
@@ -94,14 +107,15 @@ Implements the HTTP endpoints the Plex client workflow needs, answering in both 
 - **Configuration** — server name, machine identifier, advertised version, library roots, art
   options and connection string all live in `appsettings.json`.
 - **Static caches** — metadata caches are served from `wwwroot` for easy inspection.
-- **Tests** — 122 automated tests (NUnit) covering paging, XML serialization, subtitle discovery,
-  sidecar parsing, filename parsing, metadata lookup, disambiguation and caching behavior.
+- **Tests** — 129 automated tests (NUnit) covering paging, XML serialization, subtitle discovery,
+  sidecar parsing, filename parsing, metadata lookup, disambiguation, caching behavior and playback
+  progress (persistence, watched threshold, hubs).
 
 ## Scope & Limitations
 
 - **No authentication** — the server is open on the local network; Plex account sign-in is not
   implemented (the optional `X-Plex-Token` is only used as a plex.tv metadata lookup credential).
 - **No transcoding** — direct play only; `ITranscodeService` is the intended future hook.
-- **No playback progress** — Continue Watching / On Deck hubs exist but are empty; timeline
-  updates are acknowledged without being stored.
+- **On Deck** — empty by design: computing the "next episode" requires episode ordering that only
+  exists in the sidecar metadata cache, and guessing wrong would resume at the wrong episode.
 - **Proof of concept** — additional endpoints can be added from captured client traffic as needed.

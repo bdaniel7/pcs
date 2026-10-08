@@ -201,6 +201,7 @@ public sealed class XmlVideo
     [XmlAttribute("duration")] public int Duration { get; set; }
     [XmlAttribute("viewOffset")] public string ViewOffset { get; set; } = "";
     [XmlAttribute("viewCount")] public string ViewCount { get; set; } = "";
+    [XmlAttribute("lastViewedAt")] public string LastViewedAt { get; set; } = "";
     [XmlAttribute("addedAt")] public long AddedAt { get; set; }
     [XmlAttribute("updatedAt")] public long UpdatedAt { get; set; }
     [XmlAttribute("audienceRating")] public string AudienceRating { get; set; } = "";

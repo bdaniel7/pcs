@@ -288,6 +288,12 @@ public sealed class LibraryController : ControllerBase
             Thumb = $"/library/metadata/{x.Id}/thumb/{timestamp}",
             Art = $"/library/metadata/{x.Id}/art/{timestamp}",
             Duration = x.DurationMs ?? 0,
+            // Playback progress: empty (= absent in JSON) until the viewer has actually watched
+            // part of the item. This is what the client reads to offer "Resume from ..." and to
+            // draw the progress ring on grid cards.
+            ViewOffset = x.ViewOffset is > 0 ? x.ViewOffset.Value.ToString() : "",
+            ViewCount = x.ViewCount > 0 ? x.ViewCount.ToString() : "",
+            LastViewedAt = x.LastViewedAt is { } viewed ? viewed.ToUnixTimeSeconds().ToString() : "",
             AddedAt = timestamp,
             UpdatedAt = timestamp,
             Images =

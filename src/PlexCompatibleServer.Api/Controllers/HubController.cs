@@ -29,10 +29,12 @@ public sealed class HubController : ControllerBase
         var libraries = await _repo.GetLibrariesAsync(ct);
         var movieLibraries = libraries.Where(x => x.Type == LibraryType.Movie).ToList();
         var showLibraries = libraries.Where(x => x.Type == LibraryType.Show).ToList();
+        var progress = await _repo.GetInProgressAsync(null, limit, ct);
 
         var hubs = new List<XmlHub>
         {
-            EmptyHub("/hubs/home/continueWatching", "Continue Watching", "mixed", "home.continue", "hub.home.continue"),
+            ProgressHubOrEmpty("/hubs/home/continueWatching", "Continue Watching", "mixed",
+                "home.continue", "hub.home.continue", progress),
             EmptyHub("/hubs/home/onDeck", "On Deck", "episode", "home.ondeck", "hub.home.ondeck")
         };
 
@@ -66,12 +68,13 @@ public sealed class HubController : ControllerBase
 
     [HttpGet("/hubs/continueWatching")]
     [Produces("application/xml", "application/json")]
-    public IActionResult ContinueWatching()
+    public async Task<IActionResult> ContinueWatching(CancellationToken ct)
     {
+        var progress = await _repo.GetInProgressAsync(null, ResolveLimit(), ct);
         var hubs = new List<XmlHub>
         {
-            EmptyHub("/hubs/continueWatching/items", "Continue Watching", "mixed",
-                "continueWatching", "hub.continueWatching")
+            ProgressHubOrEmpty("/hubs/continueWatching/items", "Continue Watching", "mixed",
+                "continueWatching", "hub.continueWatching", progress)
         };
 
         return PlexResults.Container(this, new XmlHubContainer { Size = hubs.Count, Hubs = hubs });
@@ -116,6 +119,7 @@ public sealed class HubController : ControllerBase
 
         var items = await _repo.GetItemsAsync(libraryId, ct);
         var recent = items.OrderByDescending(x => x.UpdatedAt).Take(limit).ToList();
+        var progress = await _repo.GetInProgressAsync(libraryId, limit, ct);
 
         var recentlyAdded = SectionHub(
             $"/library/sections/{libraryId}/all?sort=addedAt:desc",
@@ -128,8 +132,8 @@ public sealed class HubController : ControllerBase
 
         var hubs = new List<XmlHub>
         {
-            EmptyHub($"/hubs/sections/{libraryId}/continueWatching/items", "Continue Watching", kind,
-                $"{kind}.inprogress.{libraryId}", $"hub.{kind}.inprogress"),
+            ProgressHubOrEmpty($"/hubs/sections/{libraryId}/continueWatching/items", "Continue Watching", kind,
+                $"{kind}.inprogress.{libraryId}", $"hub.{kind}.inprogress", progress),
             SectionHub(
                 $"/library/sections/{libraryId}/all?sort=originallyAvailableAt:desc&originallyAvailableAt>=-1y",
                 $"Recently Released {(isMovie ? "Movies" : "TV")}",
@@ -162,11 +166,33 @@ public sealed class HubController : ControllerBase
     // must resolve, or the client renders an empty shelf instead of the hub we just returned.
 
     [HttpGet("/hubs/home/continueWatching")]
+    [Produces("application/xml", "application/json")]
+    public Task<IActionResult> HomeContinueWatching(CancellationToken ct)
+        => ProgressContainer(null, ct);
+
+    // On Deck (next unwatched episode of a partly watched show) stays empty: episode order lives
+    // only in the cached sidecar titles, and a wrong next-episode is worse than none.
     [HttpGet("/hubs/home/onDeck")]
+    [Produces("application/xml", "application/json")]
+    public IActionResult OnDeckItems()
+        => PlexResults.Container(this, new XmlMediaContainer { Size = 0, MixedParents = "1" });
+
     [HttpGet("/hubs/sections/{libraryId:int}/continueWatching/items")]
     [Produces("application/xml", "application/json")]
-    public IActionResult EmptyHubItems()
-        => PlexResults.Container(this, new XmlMediaContainer { Size = 0, MixedParents = "1" });
+    public Task<IActionResult> SectionContinueWatching(int libraryId, CancellationToken ct)
+        => ProgressContainer(libraryId, ct);
+
+    private async Task<IActionResult> ProgressContainer(int? libraryId, CancellationToken ct)
+    {
+        var items = await _repo.GetInProgressAsync(libraryId, ResolveLimit(), ct);
+        return PlexResults.Container(this, new XmlMediaContainer
+        {
+            Size = items.Count,
+            MixedParents = "1",
+            TotalSize = items.Count.ToString(),
+            Videos = items.Select(x => LibraryController.ToVideoEnriched(x)).ToList()
+        });
+    }
 
     /// <summary>
     /// The detail screen loads this hub for its "More Like This" row. The official response to
@@ -354,4 +380,35 @@ public sealed class HubController : ControllerBase
             Size = 0,
             More = "0"
         };
+
+    /// <summary>
+    /// The Continue Watching shelf: the same empty shape as before when nothing is in progress,
+    /// otherwise one row per half-watched item, newest interaction first. Rows carry viewOffset,
+    /// which is what the client uses both for the progress ring and to seek on resume.
+    /// </summary>
+    private static XmlHub ProgressHubOrEmpty(
+        string key,
+        string title,
+        string type,
+        string hubIdentifier,
+        string context,
+        IReadOnlyList<MediaItem> items)
+    {
+        if (items.Count == 0) return EmptyHub(key, title, type, hubIdentifier, context);
+
+        var videos = items.Select(x => LibraryController.ToVideoEnriched(x)).ToList();
+
+        return new XmlHub
+        {
+            HubKey = string.Join(",", items.Select(x => $"/library/metadata/{x.Id}")),
+            Key = key,
+            Title = title,
+            Type = type,
+            HubIdentifier = hubIdentifier,
+            Context = context,
+            Size = videos.Count,
+            More = "0",
+            Videos = videos
+        };
+    }
 }

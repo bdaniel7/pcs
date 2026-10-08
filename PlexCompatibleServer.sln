@@ -10,6 +10,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PlexCompatibleServer.Infras
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PlexCompatibleServer.Tests", "tests\PlexCompatibleServer.Tests\PlexCompatibleServer.Tests.csproj", "{44444444-4444-4444-4444-444444444444}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{7F49A4A8-F1E9-4F68-8525-517CE47A7458}"
+	ProjectSection(SolutionItems) = preProject
+		Features.md = Features.md
+		README.md = README.md
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

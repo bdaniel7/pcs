@@ -55,6 +55,16 @@ public sealed class MediaItem
 
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    // Playback progress, reported by the client through /:/timeline and persisted so a stopped
+    // session can resume where it left off after a server or TV restart.
+    // Null = never progressed. In milliseconds, like Plex's viewOffset.
+    public int? ViewOffset { get; set; }
+    // Last time the viewer touched the item (every accepted timeline report or scrobble).
+    // Drives Continue Watching ordering; emitted as lastViewedAt.
+    public DateTimeOffset? LastViewedAt { get; set; }
+    // Number of completed views (scrobbles / crossing the 90% watched threshold).
+    public int ViewCount { get; set; }
+
     // Plex-compatible metadata fields
     public int? LibrarySectionId { get; set; }
     public int? ParentId { get; set; }

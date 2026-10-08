@@ -72,7 +72,10 @@ public sealed class MediaDbContext : DbContext
             ("Items", "UserClearLogoUrl", "TEXT NULL"),
             ("Items", "IsAdult", "INTEGER NULL"),
             ("Items", "MetadataAgentProviderGroupId", "INTEGER NULL"),
-            ("Items", "UserSquareArtUrl", "TEXT NULL")
+            ("Items", "UserSquareArtUrl", "TEXT NULL"),
+            ("Items", "ViewOffset", "INTEGER NULL"),
+            ("Items", "LastViewedAt", "TEXT NULL"),
+            ("Items", "ViewCount", "INTEGER NOT NULL DEFAULT 0")
         };
 
         foreach (var (table, column, definition) in additive)

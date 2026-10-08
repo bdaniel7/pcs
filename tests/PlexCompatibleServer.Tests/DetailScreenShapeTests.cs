@@ -185,5 +185,17 @@ public class DetailScreenShapeTests
 
         public Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries, CancellationToken ct)
             => Task.CompletedTask;
+
+        public Task SaveProgressAsync(int id, long timeMs, long durationMs, DateTimeOffset viewedAt, CancellationToken ct)
+            => Task.CompletedTask;
+
+        public Task MarkWatchedAsync(int id, DateTimeOffset viewedAt, CancellationToken ct)
+            => Task.CompletedTask;
+
+        public Task ClearProgressAsync(int id, CancellationToken ct)
+            => Task.CompletedTask;
+
+        public Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId, int limit, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<MediaItem>>([]);
     }
 }
