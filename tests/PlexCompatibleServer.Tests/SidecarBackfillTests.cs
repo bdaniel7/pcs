@@ -52,8 +52,12 @@ public class SidecarBackfillTests
         finally
         {
             try { if (File.Exists(sidecar)) File.Delete(sidecar); } catch { }
-            try { if (Directory.Exists(wwwroot) && !Directory.EnumerateFileSystemEntries(wwwroot).Any())
-                    Directory.Delete(wwwroot); } catch { }
+            try
+            {
+                if (Directory.Exists(wwwroot) && !Directory.EnumerateFileSystemEntries(wwwroot).Any())
+                    Directory.Delete(wwwroot);
+            }
+            catch { }
             ResetSidecarCache();
         }
     }
@@ -92,8 +96,12 @@ public class SidecarBackfillTests
         finally
         {
             try { if (File.Exists(sidecar)) File.Delete(sidecar); } catch { }
-            try { if (Directory.Exists(wwwroot) && !Directory.EnumerateFileSystemEntries(wwwroot).Any())
-                    Directory.Delete(wwwroot); } catch { }
+            try
+            {
+                if (Directory.Exists(wwwroot) && !Directory.EnumerateFileSystemEntries(wwwroot).Any())
+                    Directory.Delete(wwwroot);
+            }
+            catch { }
             ResetSidecarCache();
         }
     }

@@ -14,6 +14,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{7F49A4A8-F
 	ProjectSection(SolutionItems) = preProject
 		Features.md = Features.md
 		README.md = README.md
+		FIX_PLAN.md = FIX_PLAN.md
+		CODE_REVIEW.md = CODE_REVIEW.md
 	EndProjectSection
 EndProject
 Global

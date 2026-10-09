@@ -4,6 +4,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>14.0</LangVersion>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Zero warnings today; keep it that way. Style/analyzer rules are not yet enforced
+         in the build (EnforceCodeStyleInBuild is off) so only compiler/analyzer warnings count. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 </Project>

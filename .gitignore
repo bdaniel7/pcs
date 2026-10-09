@@ -8,5 +8,10 @@ obj/
 *.db-wal
 /Media/
 .vscode/
+.idea/
+backup/
 plex-lookup-cache.json
 plex-show-bindings.json
+plex-metadata.json
+appsettings.Development.json
+appsettings.Production.json

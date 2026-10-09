@@ -89,15 +89,15 @@ public static class PlexJson
     // they do not apply - an audio track carries no width/height, a subtitle track no bitDepth - and
     // the models cannot use Nullable<T> because XmlSerializer rejects it on an XmlAttribute. The
     // XML dialect still writes 0; the JSON the client actually parses omits the key.
-private static readonly HashSet<string> ZeroMeansAbsent = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> ZeroMeansAbsent = new(StringComparer.Ordinal)
       {
           "width", "height", "codedWidth", "codedHeight", "bitDepth", "level", "refFrames",
           "channels", "samplingRate", "bitrate"
       };
 
-      // Same idea for the container: a zero here means "there is no play queue", not "an empty
-      // one", and official Plex leaves the attributes out in that case.
-      private static readonly HashSet<string> ZeroMeansAbsentContainer = new(StringComparer.Ordinal)
+    // Same idea for the container: a zero here means "there is no play queue", not "an empty
+    // one", and official Plex leaves the attributes out in that case.
+    private static readonly HashSet<string> ZeroMeansAbsentContainer = new(StringComparer.Ordinal)
       {
           "playQueueSelectedItemOffset", "playQueueTotalCount", "playQueueVersion"
       };

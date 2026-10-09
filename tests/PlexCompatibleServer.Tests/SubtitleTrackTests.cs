@@ -62,17 +62,28 @@ public class SubtitleTrackTests
 
     private static MediaStreamInfo VideoStream() => new()
     {
-        StreamType = 1, Codec = "h264", Width = 1920, Height = 1080, Location = "direct"
+        StreamType = 1,
+        Codec = "h264",
+        Width = 1920,
+        Height = 1080,
+        Location = "direct"
     };
 
     private static MediaStreamInfo AudioStream() => new()
     {
-        StreamType = 2, Codec = "aac", Channels = 6, Location = "direct"
+        StreamType = 2,
+        Codec = "aac",
+        Channels = 6,
+        Location = "direct"
     };
 
     private static MediaStreamInfo EmbeddedSubtitle() => new()
     {
-        StreamType = 3, Codec = "subrip", Language = "English", LanguageCode = "eng", Location = "direct"
+        StreamType = 3,
+        Codec = "subrip",
+        Language = "English",
+        LanguageCode = "eng",
+        Location = "direct"
     };
 
     private string Sidecar(string suffix)
@@ -131,8 +142,11 @@ public class SubtitleTrackTests
     {
         var item = BuildItem(VideoStream(), AudioStream(), new MediaStreamInfo
         {
-            StreamType = 3, Codec = "hdmv_pgs_subtitle", Language = "German",
-            LanguageCode = "ger", Location = "direct"
+            StreamType = 3,
+            Codec = "hdmv_pgs_subtitle",
+            Language = "German",
+            LanguageCode = "ger",
+            Location = "direct"
         });
 
         var part = LibraryController.ToVideo(item).Media[0].Parts[0];

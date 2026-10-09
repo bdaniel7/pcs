@@ -123,7 +123,8 @@ public sealed class MediaDbContext : DbContext
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
-                if (column == "[Index]") {
+                if (column == "[Index]")
+                {
                     column = "Index";
                 }
                 if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))

@@ -344,7 +344,8 @@ public static class FilenameYear
 }
 
 internal static class MimeTypes
-{    public static string ForExtension(string extension) => extension.ToLowerInvariant() switch
+{
+    public static string ForExtension(string extension) => extension.ToLowerInvariant() switch
     {
         ".mp4" or ".m4v" => "video/mp4",
         ".webm" => "video/webm",

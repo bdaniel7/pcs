@@ -19,16 +19,16 @@ public sealed class PhotoController : ControllerBase
         (_repo, _transcoder) = (repo, transcoder);
 
     // Real Plex exposes the artwork resizer at /photo/:/transcode. The TV client asks for that exact
-// path for every poster it draws, and a 404 there breaks the screens that request it. The bare
-// /:/transcode spelling is kept for older clients.
-[HttpGet("/photo/:/transcode")]
+    // path for every poster it draws, and a 404 there breaks the screens that request it. The bare
+    // /:/transcode spelling is kept for older clients.
+    [HttpGet("/photo/:/transcode")]
     [HttpGet("/:/transcode")]
     public async Task<IActionResult> Transcode(
-        [FromQuery] string url = "",
-        [FromQuery] int width = 0,
-        [FromQuery] int height = 0,
-        [FromQuery] string upscale = "",
-        CancellationToken ct = default)
+            [FromQuery] string url = "",
+            [FromQuery] int width = 0,
+            [FromQuery] int height = 0,
+            [FromQuery] string upscale = "",
+            CancellationToken ct = default)
     {
         var item = await ResolveItemAsync(url, ct);
 

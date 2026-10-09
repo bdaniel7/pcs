@@ -12,11 +12,11 @@ public sealed class XmlRootDirectory
 
 [XmlRoot("MediaContainer")]
 public sealed class XmlServerInfo
-    {
-        [XmlAttribute("size")] public int Size { get; set; }
-        // Clients treat an unclaimed server as not ready to serve media, so it has to be present.
-        [XmlAttribute("claimed")] public string Claimed { get; set; } = "";
-        [XmlAttribute("allowCameraUpload")] public string AllowCameraUpload { get; set; } = "";
+{
+    [XmlAttribute("size")] public int Size { get; set; }
+    // Clients treat an unclaimed server as not ready to serve media, so it has to be present.
+    [XmlAttribute("claimed")] public string Claimed { get; set; } = "";
+    [XmlAttribute("allowCameraUpload")] public string AllowCameraUpload { get; set; } = "";
     [XmlAttribute("allowChannelAccess")] public string AllowChannelAccess { get; set; } = "";
     [XmlAttribute("allowSharing")] public string AllowSharing { get; set; } = "";
     [XmlAttribute("allowSync")] public string AllowSync { get; set; } = "";
@@ -288,15 +288,15 @@ public sealed class XmlGuid
 }
 
 /// <summary>Tag-shaped child element used by Plex for genres, directors, writers and roles.</summary>
-  public sealed class XmlTag
-  {
-      [XmlAttribute("id")] public string Id { get; set; } = "";
-      [XmlAttribute("filter")] public string Filter { get; set; } = "";
-      [XmlAttribute("tag")] public string Tag { get; set; } = "";
-      [XmlAttribute("tagKey")] public string? TagKey { get; set; }
-      [XmlAttribute("thumb")] public string? Thumb { get; set; }
-      [XmlAttribute("role")] public string? Role { get; set; }
-  }
+public sealed class XmlTag
+{
+    [XmlAttribute("id")] public string Id { get; set; } = "";
+    [XmlAttribute("filter")] public string Filter { get; set; } = "";
+    [XmlAttribute("tag")] public string Tag { get; set; } = "";
+    [XmlAttribute("tagKey")] public string? TagKey { get; set; }
+    [XmlAttribute("thumb")] public string? Thumb { get; set; }
+    [XmlAttribute("role")] public string? Role { get; set; }
+}
 
 /// <summary>Score entry, e.g. image="imdb://image.rating" value=6.2 type="audience".</summary>
 public sealed class XmlRating

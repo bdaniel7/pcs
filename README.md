@@ -36,7 +36,20 @@ dotnet run --project src/PlexCompatibleServer.Api
 
 Default URL: `http://0.0.0.0:32400`
 
-Set media roots in `appsettings.json`.
+Media roots come from `appsettings.json` (example defaults). For a local
+machine, override them in `appsettings.Development.json`, which is gitignored
+so each developer keeps their own paths:
+
+```json
+{
+  "Media": {
+    "Roots": [
+      { "Name": "Movies", "Path": "G:\\Media\\Movies", "Type": "movie" },
+      { "Name": "TV Shows", "Path": "G:\\Media\\TV", "Type": "show" }
+    ]
+  }
+}
+```
 
 ## Install (Debian / Ubuntu / Raspberry Pi OS)
 
