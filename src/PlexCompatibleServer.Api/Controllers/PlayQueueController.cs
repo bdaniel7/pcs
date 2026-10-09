@@ -77,7 +77,7 @@ public sealed class PlayQueueController : ControllerBase
     {
         var entry = queue.Items.FirstOrDefault(x => x.Id == queue.SelectedItemId);
         if (entry is null) return new XmlMediaContainer();
-        var video = LibraryController.ToVideoEnriched(_metadata, item, includeLibrarySection: true, selections: _selections);
+        var video = VideoMapper.ToVideoEnriched(_metadata, item, includeLibrarySection: true, selections: _selections);
         video.PlayQueueItemID = entry.Id.ToString();
 
         // The queue response is a summary: Media carries the part-less descriptor the client
@@ -98,7 +98,7 @@ public sealed class PlayQueueController : ControllerBase
             MediaTagPrefix = "/system/bundle/media/flags/",
             MediaTagVersion = PlaybackState.MediaTagVersion,
             PlayQueueID = queue.Id.ToString(),
-            PlayQueueSelectedItemID = entry?.Id.ToString() ?? "",
+            PlayQueueSelectedItemID = entry.Id.ToString(),
             PlayQueueSelectedItemOffset = offset,
             PlayQueueSelectedMetadataItemID = queue.SelectedRatingKey.ToString(),
             PlayQueueShuffled = "0",

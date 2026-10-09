@@ -2,11 +2,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
-using PlexCompatibleServer.Api;
 using PlexCompatibleServer.Api.Controllers;
 using PlexCompatibleServer.Api.Options;
 using PlexCompatibleServer.Api.Serialization;
-using PlexCompatibleServer.Core.Interfaces;
 using PlexCompatibleServer.Core.Models;
 using PlexCompatibleServer.Infrastructure.Data;
 
@@ -96,7 +94,7 @@ public class PlaybackProgressTests
         Assert.That(item.ViewCount, Is.EqualTo(0), "a partial view is not a completed view");
 
         var fresh = await _repo.GetItemAsync(_movie.Id, CancellationToken.None);
-        var video = LibraryController.ToVideo(fresh!);
+        var video = VideoMapper.ToVideo(fresh!);
         Assert.That(video.ViewOffset, Is.EqualTo("36980"));
         Assert.That(video.ViewCount, Is.Empty, "no viewCount before the watched threshold");
         Assert.That(video.LastViewedAt, Is.Not.Empty);

@@ -91,10 +91,7 @@ public sealed class MediaRepository : IMediaRepository
                 continue;
 
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".ts", ".m2ts", ".webm"
-            };
+
 
             // Materialize the recursive walk on the thread pool: Directory.EnumerateFiles is
             // synchronous, and a deep or network-backed tree can stall the scan thread.
@@ -105,7 +102,7 @@ public sealed class MediaRepository : IMediaRepository
             foreach (var file in files)
             {
                 ct.ThrowIfCancellationRequested();
-                if (!extensions.Contains(Path.GetExtension(file)))
+                if (!MediaTokens.ScanExtensions.Contains(Path.GetExtension(file)))
                     continue;
 
                 seen.Add(file);

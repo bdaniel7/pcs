@@ -192,7 +192,7 @@ public sealed class HubController : ControllerBase
             Size = items.Count,
             MixedParents = "1",
             TotalSize = items.Count.ToString(),
-            Videos = items.Select(x => LibraryController.ToVideoEnriched(_metadata, x)).ToList()
+            Videos = items.Select(x => VideoMapper.ToVideoEnriched(_metadata, x)).ToList()
         });
     }
 
@@ -225,7 +225,7 @@ public sealed class HubController : ControllerBase
             .ToList();
 
         var relatedVideos = related
-            .Select(x => LibraryController.ToVideo(x, includeLibrarySection: true))
+            .Select(x => VideoMapper.ToVideo(x, includeLibrarySection: true))
             .ToList();
 
         // Official rows in this hub carry the same scraped-metadata sections as the detail screen,
@@ -292,7 +292,7 @@ public sealed class HubController : ControllerBase
             Size = recent.Count,
             MixedParents = "1",
             TotalSize = recent.Count.ToString(),
-            Videos = recent.Select(x => LibraryController.ToVideoEnriched(_metadata, x)).ToList()
+            Videos = recent.Select(x => VideoMapper.ToVideoEnriched(_metadata, x)).ToList()
         });
     }
 
@@ -323,7 +323,7 @@ public sealed class HubController : ControllerBase
             .ToList();
 
         var videos = recent
-            .Select(x => LibraryController.ToVideoEnriched(_metadata, x, includeLibrarySection: true))
+            .Select(x => VideoMapper.ToVideoEnriched(_metadata, x, includeLibrarySection: true))
             .ToList();
 
         return new XmlHub
@@ -350,7 +350,7 @@ public sealed class HubController : ControllerBase
         int limit)
     {
         var recent = items.OrderByDescending(x => x.UpdatedAt).Take(limit).ToList();
-        var videos = recent.Select(x => LibraryController.ToVideoEnriched(_metadata, x)).ToList();
+        var videos = recent.Select(x => VideoMapper.ToVideoEnriched(_metadata, x)).ToList();
 
         return new XmlHub
         {
@@ -393,7 +393,7 @@ public sealed class HubController : ControllerBase
     {
         if (items.Count == 0) return EmptyHub(key, title, type, hubIdentifier, context);
 
-        var videos = items.Select(x => LibraryController.ToVideoEnriched(_metadata, x)).ToList();
+        var videos = items.Select(x => VideoMapper.ToVideoEnriched(_metadata, x)).ToList();
 
         return new XmlHub
         {

@@ -1,4 +1,3 @@
-using System.Net;
 using System.Xml.Serialization;
 
 namespace PlexCompatibleServer.Api.Serialization;

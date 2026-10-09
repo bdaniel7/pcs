@@ -1,12 +1,7 @@
-using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.Net.Http;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using PlexCompatibleServer.Core.Models;
+using PlexCompatibleServer.Infrastructure.Media;
 
 namespace PlexCompatibleServer.Api.Controllers;
 
@@ -118,7 +113,7 @@ internal sealed class PlexTvClient
     {
         if (item.Library is { Type: LibraryType.Show }) return await FetchEpisodeRecordAsync(item, ct).ConfigureAwait(false);
         if (item.Library is not { Type: LibraryType.Movie }) return null;
-        var title = CleanSearchTitle(item.FilePath ?? string.Empty);
+        var title = CleanSearchTitle(item.FilePath);
 
         if (string.IsNullOrWhiteSpace(title)) return null;
 
@@ -166,7 +161,7 @@ internal sealed class PlexTvClient
     internal async Task<SidecarItem?> FetchEpisodeRecordAsync(MediaItem item,
                                                               CancellationToken ct)
     {
-        var parsed = TvEpisodeName.Parse(item.FilePath ?? string.Empty);
+        var parsed = TvEpisodeName.Parse(item.FilePath);
 
         if (parsed is null) return null;
 
@@ -585,7 +580,7 @@ internal sealed class PlexTvClient
     {
         var file = filePath;
         try { file = Path.GetFileName(file); } catch { }
-        var exts = new[] { ".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".wmv", ".iso", ".webm", ".flv" };
+        var exts = MediaTokens.FilenameExtensions;
 
         for (var i = 0; i < 3; i++)
         {
@@ -629,7 +624,7 @@ internal sealed class PlexTvClient
         else
         {
             for (var i = 1; i < tokens.Count; i++)
-                if (IsQualityToken(tokens[i]))
+                if (MediaTokens.IsSearchQualityToken(tokens[i]))
                 {
                     cut = i;
 
@@ -642,12 +637,6 @@ internal sealed class PlexTvClient
 
     private static bool IsYearToken(string t) =>
         t.Length == 4 && int.TryParse(t, out var y) && y >= 1900 && y <= 2100;
-
-    private static bool IsQualityToken(string t) =>
-        System.Text.RegularExpressions.Regex.IsMatch(
-                                                     t,
-                                                     "^(1080p|2160p|720p|480p|webrip|webdl|web|dl|bluray|brrip|bdremux|x264|x265|h264|h265|hevc|remux|aac|ac3|eac3|dts|ddp|atmos|truehd|hdr|sdr|proper|repack|limited|unrated|multi|dual|subbed|dubbed|imax|10bit|8bit|yts|yify|gg|bz)$",
-                                                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     /// <summary>
     /// Picks the anonymous-search candidate whose normalized title matches and whose year is within

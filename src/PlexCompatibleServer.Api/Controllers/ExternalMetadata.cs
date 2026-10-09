@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
 using PlexCompatibleServer.Api.Serialization;
 using PlexCompatibleServer.Core.Interfaces;
 using PlexCompatibleServer.Core.Models;
@@ -140,7 +135,7 @@ internal sealed class ExternalMetadata : IMetadataService
         {
             ct.ThrowIfCancellationRequested();
             result.Scanned++;
-            var label = item.Title ?? item.FilePath ?? $"item {item.Id}";
+            var label = item.Title;
 
             try
             {

@@ -1,4 +1,3 @@
-using System;
 using PlexCompatibleServer.Api.Serialization;
 using PlexCompatibleServer.Core.Interfaces;
 using PlexCompatibleServer.Core.Models;

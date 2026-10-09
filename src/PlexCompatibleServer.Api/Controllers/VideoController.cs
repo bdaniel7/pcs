@@ -96,7 +96,7 @@ public sealed class VideoController : ControllerBase
         if (item is null)
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
 
-        var streams = LibraryController.ToVideo(item, selections: _selections)
+        var streams = VideoMapper.ToVideo(item, selections: _selections)
             .Media[0].Parts[0].Streams;
 
         // 0 is the documented way of saying "no subtitle" and always passes; anything else has to
@@ -133,7 +133,7 @@ public sealed class VideoController : ControllerBase
         if (item is null)
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
 
-        var video = LibraryController.ToVideo(item, selections: _selections);
+        var video = VideoMapper.ToVideo(item, selections: _selections);
         foreach (var media in video.Media)
         {
             media.Selected = "1";

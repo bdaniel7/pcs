@@ -99,7 +99,7 @@ public class SubtitleTrackTests
         var item = BuildItem(VideoStream(), AudioStream());
         Sidecar(".en");
 
-        var part = LibraryController.ToVideo(item).Media[0].Parts[0];
+        var part = VideoMapper.ToVideo(item).Media[0].Parts[0];
 
         Assert.That(part.Streams, Has.Count.EqualTo(3));
 
@@ -124,7 +124,7 @@ public class SubtitleTrackTests
         var item = BuildItem(VideoStream(), AudioStream(), EmbeddedSubtitle());
         Sidecar(".en");
 
-        var part = LibraryController.ToVideo(item).Media[0].Parts[0];
+        var part = VideoMapper.ToVideo(item).Media[0].Parts[0];
 
         Assert.That(part.Streams, Has.Count.EqualTo(4));
         // Text inside the container is fetched like an external file: it carries a key at the
@@ -149,7 +149,7 @@ public class SubtitleTrackTests
             Location = "direct"
         });
 
-        var part = LibraryController.ToVideo(item).Media[0].Parts[0];
+        var part = VideoMapper.ToVideo(item).Media[0].Parts[0];
 
         var track = part.Streams[2];
         Assert.That(track.Location, Is.EqualTo("direct"));
@@ -166,7 +166,7 @@ public class SubtitleTrackTests
         var item = BuildItem(VideoStream(), AudioStream(), EmbeddedSubtitle());
         Sidecar(".en");
 
-        var streams = LibraryController.ToVideo(item).Media[0].Parts[0].Streams;
+        var streams = VideoMapper.ToVideo(item).Media[0].Parts[0].Streams;
 
         Assert.Multiple(() =>
         {
@@ -183,7 +183,7 @@ public class SubtitleTrackTests
         var item = BuildItem();
         Sidecar(".en");
 
-        var part = LibraryController.ToVideo(item).Media[0].Parts[0];
+        var part = VideoMapper.ToVideo(item).Media[0].Parts[0];
 
         Assert.That(part.Streams, Has.Count.EqualTo(1));
         Assert.That(part.Streams[0].StreamType, Is.EqualTo(3));
@@ -308,7 +308,7 @@ public class SubtitleTrackTests
         var put = await controller.SetStreamSelection(5, subtitleStreamId: 5003);
 
         Assert.That(put, Is.InstanceOf<ContentResult>());
-        var streams = LibraryController.ToVideo(item, selections: store).Media[0].Parts[0].Streams;
+        var streams = VideoMapper.ToVideo(item, selections: store).Media[0].Parts[0].Streams;
         Assert.Multiple(() =>
         {
             Assert.That(streams[3].Selected, Is.EqualTo("1"), "the track the viewer picked");
@@ -331,7 +331,7 @@ public class SubtitleTrackTests
         await controller.SetStreamSelection(5, subtitleStreamId: 5003);
         await controller.SetStreamSelection(5, subtitleStreamId: 0);
 
-        var streams = LibraryController.ToVideo(item, selections: store).Media[0].Parts[0].Streams;
+        var streams = VideoMapper.ToVideo(item, selections: store).Media[0].Parts[0].Streams;
         Assert.That(streams.Where(s => s.StreamType == 3).Select(s => s.Selected),
             Has.All.EqualTo(""));
     }

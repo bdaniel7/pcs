@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using PlexCompatibleServer.Api;
 using PlexCompatibleServer.Api.Controllers;
 using PlexCompatibleServer.Api.Options;
 using PlexCompatibleServer.Core.Interfaces;

@@ -1,5 +1,4 @@
 using System.Text;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -160,7 +159,7 @@ public class OfficialArtworkTests
         var covered = Item(44, LibraryType.Show,
             officialParent: @"C:\art\season.jpg",
             officialGrandparent: @"C:\art\show.jpg");
-        var video = LibraryController.ToVideo(covered);
+        var video = VideoMapper.ToVideo(covered);
 
         Assert.That(video.ParentThumb, Is.EqualTo("/library/metadata/44/parentThumb/1790948816"));
         Assert.That(video.GrandparentThumb, Is.EqualTo("/library/metadata/44/grandparentThumb/1790948816"));
@@ -168,12 +167,12 @@ public class OfficialArtworkTests
         // Before the artwork sync has run there is nothing for those routes to serve: stating
         // them anyway would leave the card blank where the client could still fall back.
         var bare = Item(45, LibraryType.Show);
-        var bareVideo = LibraryController.ToVideo(bare);
+        var bareVideo = VideoMapper.ToVideo(bare);
         Assert.That(bareVideo.ParentThumb, Is.Empty);
         Assert.That(bareVideo.GrandparentThumb, Is.Empty);
 
         var movie = Item(3, LibraryType.Movie);
-        var movieVideo = LibraryController.ToVideo(movie);
+        var movieVideo = VideoMapper.ToVideo(movie);
         Assert.That(movieVideo.ParentThumb, Is.Empty);
         Assert.That(movieVideo.GrandparentThumb, Is.Empty);
     }

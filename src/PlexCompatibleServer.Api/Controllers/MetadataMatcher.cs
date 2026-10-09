@@ -1,8 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Text;
 using PlexCompatibleServer.Core.Models;
+using PlexCompatibleServer.Infrastructure.Media;
 
 namespace PlexCompatibleServer.Api.Controllers;
 
@@ -45,14 +43,14 @@ internal sealed class MetadataMatcher
         }
 
         {
-            var file = item.FilePath ?? string.Empty;
+            var file = item.FilePath;
             try { file = Path.GetFileName(file); } catch { }
             var baseName = file;
 
             for (int i = 0; i < 3; i++)
             {
                 var lower = baseName.ToLowerInvariant();
-                var exts = new[] { ".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".wmv", ".iso", ".webm", ".flv" };
+                var exts = MediaTokens.FilenameExtensions;
                 bool hit = false;
 
                 foreach (var e in exts)
@@ -76,7 +74,7 @@ internal sealed class MetadataMatcher
             if (!isEpisode)
             {
                 rec ??= _store.GetFuzzy(baseName);
-                rec ??= _store.GetFuzzy(item.FilePath ?? string.Empty);
+                rec ??= _store.GetFuzzy(item.FilePath);
 
                 if (rec is null && !string.IsNullOrEmpty(item.FilePath))
                 {
@@ -120,7 +118,7 @@ internal sealed class MetadataMatcher
 
             return true;
         }
-        var title = item.Title ?? string.Empty;
+        var title = item.Title;
 
         if (title.Length > 0)
         {
@@ -152,7 +150,7 @@ internal sealed class MetadataMatcher
 
     internal static string GetKey(MediaItem item)
     {
-        var file = item.FilePath ?? string.Empty;
+        var file = item.FilePath;
         try { file = Path.GetFileName(file); } catch { }
         var baseName = file;
 
@@ -179,7 +177,7 @@ internal sealed class MetadataMatcher
 
     private static string KeyOf(string stem)
     {
-        var s = (stem ?? string.Empty).ToLowerInvariant();
+        var s = (stem).ToLowerInvariant();
         var sb = new StringBuilder(s.Length);
 
         foreach (var c in s)
@@ -204,9 +202,8 @@ internal sealed class MetadataMatcher
                 // ignore
             }
         }
-        var s = (stem ?? string.Empty).ToLowerInvariant().Replace("&", " and ");
-        var pattern = @"\b(1080p|2160p|720p|480p|webrip|web|web-dl|webdl|bluray|brrip|bdremux|x264|x265|h264|h265|hevc|aac\d?(?:\.\d)?|ac3|eac3|dts(-hd)?|dd\+?|ddp?|atmos|truehd|hdr10\+?|hdr|sdr|remux|proper|repack|internal|limited|extended|unrated|multi|dual|subbed|dubbed|imax|10bit|8bit|yify|yts|retail|dksubs|gg|bz|lt)\b";
-        s = System.Text.RegularExpressions.Regex.Replace(s, pattern, " ", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var s = stem.ToLowerInvariant().Replace("&", " and ");
+        s = MediaTokens.QualityTokens.Replace(s, " ");
         s = System.Text.RegularExpressions.Regex.Replace(s, "[^a-z0-9]+", " ");
         var tokens = s.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
         var keep = new List<string>(tokens.Length);
@@ -258,7 +255,7 @@ internal sealed class MetadataMatcher
         foreach (var item in items)
         {
             if (item.Library is { Type: LibraryType.Show } &&
-                TvEpisodeName.Parse(item.FilePath ?? string.Empty) is { } parsed &&
+                TvEpisodeName.Parse(item.FilePath) is { } parsed &&
                 (parsed.EpisodeTitle.Length > 0 || ContainsYearToken(parsed.ShowName)))
             {
                 confident.Add(item);

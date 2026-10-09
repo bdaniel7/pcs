@@ -37,7 +37,7 @@ public sealed class MetadataController : ControllerBase
 
         var kind = item.Library.Type == LibraryType.Movie ? "movie" : "show";
 
-        var video = LibraryController.ToVideo(item, selections: _selections);
+        var video = VideoMapper.ToVideo(item, selections: _selections);
 
         // The detail screen renders from the *first* item response it receives, which carries only
         // includeUserState=1 and no includeExternalMetadata. Gating the scraped-metadata sections

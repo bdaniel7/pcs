@@ -1,4 +1,3 @@
-using System;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -54,5 +53,5 @@ internal sealed class FlexibleNumberConverter<T> : JsonConverter<T> where T : st
     public override void Write(Utf8JsonWriter writer,
                                T value,
                                JsonSerializerOptions options)
-      => writer.WriteRawValue(value.ToString(null, CultureInfo.InvariantCulture)!, skipInputValidation: true);
+      => writer.WriteRawValue(value.ToString(null, CultureInfo.InvariantCulture), skipInputValidation: true);
 }

@@ -1,6 +1,5 @@
-using System.Collections.Generic;
-using System.IO;
 using System.Text.RegularExpressions;
+using PlexCompatibleServer.Infrastructure.Media;
 
 namespace PlexCompatibleServer.Api.Controllers;
 
@@ -33,8 +32,7 @@ internal static class TvEpisodeName
         @"(?<![A-Za-z0-9])(\d{1,2})x(\d{2,3})(?!\d)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly string[] Extensions =
-        { ".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".wmv", ".iso", ".webm", ".flv" };
+    private static readonly string[] Extensions = MediaTokens.FilenameExtensions;
 
     public static ParsedEpisodeName? Parse(string filePath)
     {
@@ -87,7 +85,7 @@ internal static class TvEpisodeName
         foreach (var token in Regex.Split(rest, "[^A-Za-z0-9]+"))
         {
             if (token.Length == 0) continue;
-            if (IsReleaseToken(token)) break;
+            if (MediaTokens.IsReleaseToken(token)) break;
             if (keep.Count > 0 && IsYearToken(token)) break;
             keep.Add(token);
         }
@@ -96,10 +94,4 @@ internal static class TvEpisodeName
 
     private static bool IsYearToken(string t) =>
         t.Length == 4 && int.TryParse(t, out var y) && y >= 1900 && y <= 2100;
-
-    private static bool IsReleaseToken(string t) =>
-        Regex.IsMatch(
-            t,
-            "^(1080p|2160p|720p|480p|576p|webrip|webdl|bluray|brrip|bdremux|remux|x264|x265|h264|h265|hevc|avc|aac|ac3|eac3|dts|ddp|atmos|truehd|hdr|hdr10|sdr|dv|proper|repack|internal|limited|extended|unrated|hdtv|dvdrip|10bit|8bit|imax|multi|dual|subbed|dubbed|amzn|atvp|netflix|hulu)$",
-            RegexOptions.IgnoreCase);
 }
