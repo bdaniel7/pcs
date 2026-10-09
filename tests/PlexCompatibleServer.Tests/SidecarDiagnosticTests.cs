@@ -9,7 +9,7 @@ namespace PlexCompatibleServer.Tests;
 
 public class SidecarDiagnosticTests
 {
-    private static string FindApiProjectDir()
+    private static string findApiProjectDir()
     {
         var dir = TestContext.CurrentContext.TestDirectory;
         while (dir is not null && !File.Exists(Path.Combine(dir, "PlexCompatibleServer.sln")))
@@ -18,22 +18,22 @@ public class SidecarDiagnosticTests
         return Path.Combine(dir!, "src", "PlexCompatibleServer.Api");
     }
 
-    private ExternalMetadata _metadata = null!;
+    private ExternalMetadata metadata = null!;
 
     [SetUp]
-    public void SetUp() => _metadata = new ExternalMetadata();
+    public void SetUp() => metadata = new ExternalMetadata();
 
-    private void ResetSidecarCache()
+    private void resetSidecarCache()
     {
         typeof(SidecarStore)
             .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(_metadata.Store, null);
+            .SetValue(metadata.Store, null);
     }
 
     [Test]
     public void Sidecar_json_deserializes_with_sidecar_item_type()
     {
-        var path = Path.Combine(FindApiProjectDir(), "wwwroot", "plex-metadata.json");
+        var path = Path.Combine(findApiProjectDir(), "wwwroot", "plex-metadata.json");
 
         try
         {
@@ -52,8 +52,8 @@ public class SidecarDiagnosticTests
     public async Task Disclosure_day_sidecar_match()
     {
         var prev = Directory.GetCurrentDirectory();
-        Directory.SetCurrentDirectory(FindApiProjectDir());
-        ResetSidecarCache();
+        Directory.SetCurrentDirectory(findApiProjectDir());
+        resetSidecarCache();
         try
         {
             var item = new MediaItem
@@ -66,7 +66,7 @@ public class SidecarDiagnosticTests
 
             try
             {
-                await _metadata.ApplyAsync(item, video);
+                await metadata.ApplyAsync(item, video);
             }
             catch (Exception ex)
             {
@@ -80,7 +80,7 @@ public class SidecarDiagnosticTests
         finally
         {
             Directory.SetCurrentDirectory(prev);
-            ResetSidecarCache();
+            resetSidecarCache();
         }
     }
 }

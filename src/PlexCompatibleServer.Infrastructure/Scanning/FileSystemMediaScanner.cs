@@ -5,10 +5,10 @@ namespace PlexCompatibleServer.Infrastructure.Scanning;
 
 public sealed class FileSystemMediaScanner : IMediaScanner
 {
-    private readonly IMediaRepository _repository;
+    private readonly IMediaRepository repository;
 
-    public FileSystemMediaScanner(IMediaRepository repository) => _repository = repository;
+    public FileSystemMediaScanner(IMediaRepository repository) => this.repository = repository;
 
     public Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries, CancellationToken ct) =>
-        _repository.SynchronizeAsync(libraries, ct);
+        repository.SynchronizeAsync(libraries, ct);
 }

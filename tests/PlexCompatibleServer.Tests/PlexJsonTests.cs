@@ -37,7 +37,7 @@ public class PlexJsonTests
     [Test]
     public void Serialize_OmitsNullOptionalAttributes()
     {
-        var json = PlexJson.Serialize(new XmlMediaContainer { Size = 0, LibrarySectionID = "" });
+        var json = PlexJson.Serialize(new XmlMediaContainer { Size = 0, LibrarySectionId = "" });
 
         using var doc = JsonDocument.Parse(json);
         var container = doc.RootElement.GetProperty("MediaContainer");

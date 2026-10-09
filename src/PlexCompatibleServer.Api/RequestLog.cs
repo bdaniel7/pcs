@@ -7,10 +7,10 @@ namespace PlexCompatibleServer.Api;
 /// </summary>
 internal static class RequestLog
 {
-    private const string TokenKey = "X-Plex-Token";
-    private const string Redacted = "***";
+    private const string TOKEN_KEY = "X-Plex-Token";
+    private const string REDACTED = "***";
 
-    private static readonly System.Text.RegularExpressions.Regex TokenQuery =
+    private static readonly System.Text.RegularExpressions.Regex tokenQuery =
         new(@"(?<![A-Za-z0-9_-])X-Plex-Token=[^&]*",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase |
             System.Text.RegularExpressions.RegexOptions.Compiled);
@@ -19,7 +19,7 @@ internal static class RequestLog
     internal static string DescribeTarget(HttpContext context)
     {
         var target = context.Request.Path + context.Request.QueryString;
-        target = TokenQuery.Replace(target, RedactedPrefix());
+        target = tokenQuery.Replace(target, redactedPrefix());
 
         return target.Length > 4000 ? target[..4000] + "..." : target;
     }
@@ -29,17 +29,17 @@ internal static class RequestLog
     {
         var headers = context.Request.Headers
             .Where(h => h.Key.StartsWith("X-Plex-", StringComparison.OrdinalIgnoreCase))
-            .Select(h => $"{h.Key}={Redact(h.Key, h.Value.ToString())}");
+            .Select(h => $"{h.Key}={redact(h.Key, h.Value.ToString())}");
 
         var query = context.Request.Query
             .Where(q => q.Key.StartsWith("X-Plex-", StringComparison.OrdinalIgnoreCase))
-            .Select(q => $"{q.Key}={Redact(q.Key, q.Value.ToString())}");
+            .Select(q => $"{q.Key}={redact(q.Key, q.Value.ToString())}");
 
         return string.Join(" ", headers.Concat(query));
     }
 
-    private static string RedactedPrefix() => TokenKey + "=" + Redacted;
+    private static string redactedPrefix() => TOKEN_KEY + "=" + REDACTED;
 
-    private static string Redact(string key, string value) =>
-        key.Equals(TokenKey, StringComparison.OrdinalIgnoreCase) ? Redacted : value;
+    private static string redact(string key, string value) =>
+        key.Equals(TOKEN_KEY, StringComparison.OrdinalIgnoreCase) ? REDACTED : value;
 }

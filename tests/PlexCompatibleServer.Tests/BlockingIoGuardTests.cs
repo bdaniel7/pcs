@@ -13,7 +13,7 @@ public class BlockingIoGuardTests
     [Test]
     public void Api_sources_contain_no_blocking_await_hacks()
     {
-        var root = FindRepoRoot();
+        var root = findRepoRoot();
         var offenders = new List<string>();
 
         foreach (var file in Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories))
@@ -30,7 +30,7 @@ public class BlockingIoGuardTests
             "sync-over-async must not reappear; network I/O stays awaited");
     }
 
-    private static string FindRepoRoot()
+    private static string findRepoRoot()
     {
         var dir = TestContext.CurrentContext.TestDirectory;
 

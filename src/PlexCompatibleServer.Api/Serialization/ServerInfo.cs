@@ -7,7 +7,7 @@ namespace PlexCompatibleServer.Api.Serialization;
 /// </summary>
 public static class ServerInfo
 {
-    public const string OwnerFeatures =
+    public const string OWNER_FEATURES =
         "00077925-6031-401b-8679-f6617ed0cec6,007fb90d-2224-4d24-bd42-e87ffde13558," +
         "06d14b9e-2af8-4c2b-a4a1-ea9d5c515824,1417df52-986e-4e4b-8dcd-3997fbc5c976," +
         "22b27e12-472e-4383-92ea-2ec3976d8e72,24b4cf36-b296-4002-86b7-f1adb657e76a," +
@@ -41,11 +41,11 @@ public static class ServerInfo
         "f83450e2-759a-4de4-8b31-e4a163896d43,fec722a0-a6d4-4fbd-96dc-4ffb02b072c5," +
         "federated-auth,home,kevin-bacon,livetv,radio,tuner-sharing,unsupportedtuners";
 
-    public const string VideoBitrates = "64,96,208,320,720,1500,2000,3000,4000,8000,10000,12000,20000";
-    public const string VideoQualities = "0,1,2,3,4,5,6,7,8,9,10,11,12";
-    public const string VideoResolutions = "128,128,160,240,320,480,768,720,720,1080,1080,1080,1080";
+    public const string VIDEO_BITRATES = "64,96,208,320,720,1500,2000,3000,4000,8000,10000,12000,20000";
+    public const string VIDEO_QUALITIES = "0,1,2,3,4,5,6,7,8,9,10,11,12";
+    public const string VIDEO_RESOLUTIONS = "128,128,160,240,320,480,768,720,720,1080,1080,1080,1080";
 
-    private static string Default(string current, string fallback) => string.IsNullOrEmpty(current) ? fallback : current;
+    private static string @default(string current, string fallback) => string.IsNullOrEmpty(current) ? fallback : current;
 
     public static XmlServerInfo Build(XmlServerInfo info)
     {
@@ -69,13 +69,13 @@ public static class ServerInfo
         if (string.IsNullOrEmpty(info.Multiuser)) info.Multiuser = "1";
         if (string.IsNullOrEmpty(info.MyPlex)) info.MyPlex = "1";
         if (string.IsNullOrEmpty(info.MyPlexSubscription)) info.MyPlexSubscription = "0";
-        if (string.IsNullOrEmpty(info.OwnerFeatures)) info.OwnerFeatures = OwnerFeatures;
-        info.Platform = Default(info.Platform, PlexXml.PlatformName());
-        info.PlatformVersion = Default(info.PlatformVersion, Environment.Version.ToString());
+        if (string.IsNullOrEmpty(info.OwnerFeatures)) info.OwnerFeatures = OWNER_FEATURES;
+        info.Platform = @default(info.Platform, PlexXml.PlatformName());
+        info.PlatformVersion = @default(info.PlatformVersion, Environment.Version.ToString());
         if (string.IsNullOrEmpty(info.PluginHost)) info.PluginHost = "1";
         if (string.IsNullOrEmpty(info.PushNotifications)) info.PushNotifications = "0";
         if (string.IsNullOrEmpty(info.ReadOnlyLibraries)) info.ReadOnlyLibraries = "0";
-        if (string.IsNullOrEmpty(info.StreamingBrainABRVersion)) info.StreamingBrainABRVersion = "3";
+        if (string.IsNullOrEmpty(info.StreamingBrainAbrVersion)) info.StreamingBrainAbrVersion = "3";
         if (string.IsNullOrEmpty(info.StreamingBrainVersion)) info.StreamingBrainVersion = "2";
         if (string.IsNullOrEmpty(info.Sync)) info.Sync = "1";
         if (string.IsNullOrEmpty(info.TranscoderActiveVideoSessions)) info.TranscoderActiveVideoSessions = "0";
@@ -84,9 +84,9 @@ public static class ServerInfo
         if (string.IsNullOrEmpty(info.TranscoderPhoto)) info.TranscoderPhoto = "1";
         if (string.IsNullOrEmpty(info.TranscoderSubtitles)) info.TranscoderSubtitles = "1";
         if (string.IsNullOrEmpty(info.TranscoderVideo)) info.TranscoderVideo = "1";
-        if (string.IsNullOrEmpty(info.TranscoderVideoBitrates)) info.TranscoderVideoBitrates = VideoBitrates;
-        if (string.IsNullOrEmpty(info.TranscoderVideoQualities)) info.TranscoderVideoQualities = VideoQualities;
-        if (string.IsNullOrEmpty(info.TranscoderVideoResolutions)) info.TranscoderVideoResolutions = VideoResolutions;
+        if (string.IsNullOrEmpty(info.TranscoderVideoBitrates)) info.TranscoderVideoBitrates = VIDEO_BITRATES;
+        if (string.IsNullOrEmpty(info.TranscoderVideoQualities)) info.TranscoderVideoQualities = VIDEO_QUALITIES;
+        if (string.IsNullOrEmpty(info.TranscoderVideoResolutions)) info.TranscoderVideoResolutions = VIDEO_RESOLUTIONS;
         if (string.IsNullOrEmpty(info.UpdatedAt)) info.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
         if (string.IsNullOrEmpty(info.Updater)) info.Updater = "1";
         if (string.IsNullOrEmpty(info.VoiceSearch)) info.VoiceSearch = "1";
@@ -108,9 +108,9 @@ public static class ServerInfo
         if (string.IsNullOrEmpty(info.LiveTv)) info.LiveTv = "7";
         if (string.IsNullOrEmpty(info.MyPlex)) info.MyPlex = "1";
         if (string.IsNullOrEmpty(info.MyPlexSubscription)) info.MyPlexSubscription = "0";
-        if (string.IsNullOrEmpty(info.OwnerFeatures)) info.OwnerFeatures = OwnerFeatures;
-        info.Platform = Default(info.Platform, PlexXml.PlatformName());
-        info.PlatformVersion = Default(info.PlatformVersion, Environment.Version.ToString());
+        if (string.IsNullOrEmpty(info.OwnerFeatures)) info.OwnerFeatures = OWNER_FEATURES;
+        info.Platform = @default(info.Platform, PlexXml.PlatformName());
+        info.PlatformVersion = @default(info.PlatformVersion, Environment.Version.ToString());
         if (string.IsNullOrEmpty(info.PluginHost)) info.PluginHost = "1";
         if (string.IsNullOrEmpty(info.PushNotifications)) info.PushNotifications = "0";
         if (string.IsNullOrEmpty(info.ReadOnlyLibraries)) info.ReadOnlyLibraries = "0";
@@ -122,9 +122,9 @@ public static class ServerInfo
         if (string.IsNullOrEmpty(info.TranscoderLyrics)) info.TranscoderLyrics = "1";
         if (string.IsNullOrEmpty(info.TranscoderSubtitles)) info.TranscoderSubtitles = "1";
         if (string.IsNullOrEmpty(info.TranscoderVideo)) info.TranscoderVideo = "1";
-        if (string.IsNullOrEmpty(info.TranscoderVideoBitrates)) info.TranscoderVideoBitrates = VideoBitrates;
-        if (string.IsNullOrEmpty(info.TranscoderVideoQualities)) info.TranscoderVideoQualities = VideoQualities;
-        if (string.IsNullOrEmpty(info.TranscoderVideoResolutions)) info.TranscoderVideoResolutions = VideoResolutions;
+        if (string.IsNullOrEmpty(info.TranscoderVideoBitrates)) info.TranscoderVideoBitrates = VIDEO_BITRATES;
+        if (string.IsNullOrEmpty(info.TranscoderVideoQualities)) info.TranscoderVideoQualities = VIDEO_QUALITIES;
+        if (string.IsNullOrEmpty(info.TranscoderVideoResolutions)) info.TranscoderVideoResolutions = VIDEO_RESOLUTIONS;
         if (string.IsNullOrEmpty(info.UpdatedAt)) info.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
         if (string.IsNullOrEmpty(info.Updater)) info.Updater = "1";
         if (string.IsNullOrEmpty(info.VoiceSearch)) info.VoiceSearch = "1";

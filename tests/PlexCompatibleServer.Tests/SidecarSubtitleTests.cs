@@ -11,43 +11,43 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class SidecarSubtitleTests
 {
-    private const string VideoName = "Emily.The.Criminal.2022.1080p.WEBRip.x264.AAC5.1-[YTS.MX].mp4";
+    private const string VIDEO_NAME = "Emily.The.Criminal.2022.1080p.WEBRip.x264.AAC5.1-[YTS.MX].mp4";
 
-    private string _dir = "";
+    private string dir = "";
 
     [SetUp]
     public void SetUp()
     {
-        _dir = Path.Combine(Path.GetTempPath(), "plex-subs-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_dir);
+        dir = Path.Combine(Path.GetTempPath(), "plex-subs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
     }
 
     [TearDown]
     public void TearDown()
     {
-        if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
     }
 
-    private string Video(string name = VideoName)
+    private string video(string name = VIDEO_NAME)
     {
-        var path = Path.Combine(_dir, name);
+        var path = Path.Combine(dir, name);
         File.WriteAllBytes(path, [0x00]);
         return path;
     }
 
-    private string Sidecar(string name)
+    private string sidecar(string name)
     {
-        var path = Path.Combine(_dir, name);
+        var path = Path.Combine(dir, name);
         File.WriteAllText(path, "1\n00:00:01,000 --> 00:00:02,000\nhello\n");
         return path;
     }
 
-    private static string BaseName(string videoName) => Path.GetFileNameWithoutExtension(videoName);
+    private static string baseName(string videoName) => Path.GetFileNameWithoutExtension(videoName);
 
     [Test]
     public void VideoWithoutSidecarHasNoTracks()
     {
-        var video = Video();
+        var video = this.video();
 
         Assert.That(SidecarSubtitles.Find(video), Is.Empty);
     }
@@ -55,8 +55,8 @@ public class SidecarSubtitleTests
     [Test]
     public void UntaggedSidecarIsFound()
     {
-        var video = Video();
-        var sub = Sidecar(BaseName(VideoName) + ".srt");
+        var video = this.video();
+        var sub = sidecar(baseName(VIDEO_NAME) + ".srt");
 
         var found = SidecarSubtitles.Find(video);
 
@@ -68,8 +68,8 @@ public class SidecarSubtitleTests
     [Test]
     public void ContainerQualifiedSidecarIsFound()
     {
-        var video = Video();
-        var sub = Sidecar(VideoName + ".srt");
+        var video = this.video();
+        var sub = sidecar(VIDEO_NAME + ".srt");
 
         var found = SidecarSubtitles.Find(video);
 
@@ -80,8 +80,8 @@ public class SidecarSubtitleTests
     [Test]
     public void LanguageTaggedSidecarIsFound()
     {
-        var video = Video();
-        var sub = Sidecar(BaseName(VideoName) + ".en.srt");
+        var video = this.video();
+        var sub = sidecar(baseName(VIDEO_NAME) + ".en.srt");
 
         var found = SidecarSubtitles.Find(video);
 
@@ -95,8 +95,8 @@ public class SidecarSubtitleTests
     [Test]
     public void ThreeLetterCodeIsMappedToItsTag()
     {
-        var video = Video();
-        Sidecar(BaseName(VideoName) + ".ger.srt");
+        var video = this.video();
+        sidecar(baseName(VIDEO_NAME) + ".ger.srt");
 
         var found = SidecarSubtitles.Find(video);
 
@@ -109,8 +109,8 @@ public class SidecarSubtitleTests
     [Test]
     public void RegionTagKeepsTheRegion()
     {
-        var video = Video();
-        Sidecar(BaseName(VideoName) + ".pt-BR.srt");
+        var video = this.video();
+        sidecar(baseName(VIDEO_NAME) + ".pt-BR.srt");
 
         var found = SidecarSubtitles.Find(video);
 
@@ -122,8 +122,8 @@ public class SidecarSubtitleTests
     [Test]
     public void UnknownIsoLookingCodeIsPassedThrough()
     {
-        var video = Video();
-        Sidecar(BaseName(VideoName) + ".xyz.srt");
+        var video = this.video();
+        sidecar(baseName(VIDEO_NAME) + ".xyz.srt");
 
         var found = SidecarSubtitles.Find(video);
 
@@ -134,9 +134,9 @@ public class SidecarSubtitleTests
     [Test]
     public void ForcedTrackIsFlaggedAndOrderedLast()
     {
-        var video = Video();
-        var plain = Sidecar(BaseName(VideoName) + ".srt");
-        var forced = Sidecar(BaseName(VideoName) + ".en.forced.srt");
+        var video = this.video();
+        var plain = sidecar(baseName(VIDEO_NAME) + ".srt");
+        var forced = sidecar(baseName(VIDEO_NAME) + ".en.forced.srt");
 
         var found = SidecarSubtitles.Find(video);
 
@@ -151,8 +151,8 @@ public class SidecarSubtitleTests
     [Test]
     public void ContainerQualifiedTaggedSidecarIsFound()
     {
-        var video = Video();
-        var sub = Sidecar(VideoName + ".en.srt");
+        var video = this.video();
+        var sub = sidecar(VIDEO_NAME + ".en.srt");
 
         var found = SidecarSubtitles.Find(video);
 
@@ -164,8 +164,8 @@ public class SidecarSubtitleTests
     [Test]
     public void SdhTrackIsFlagged()
     {
-        var video = Video();
-        Sidecar(BaseName(VideoName) + ".en.sdh.srt");
+        var video = this.video();
+        sidecar(baseName(VIDEO_NAME) + ".en.sdh.srt");
 
         var found = SidecarSubtitles.Find(video);
 
@@ -177,14 +177,14 @@ public class SidecarSubtitleTests
     [Test]
     public void FilesThatDoNotBelongToTheVideoAreIgnored()
     {
-        var video = Video();
+        var video = this.video();
         // Right extension, wrong stem.
-        Sidecar("Some.Other.Movie.2019.en.srt");
+        sidecar("Some.Other.Movie.2019.en.srt");
         // Right stem, but the trailing token is not a language or a qualifier.
-        Sidecar(BaseName(VideoName) + ".extras.srt");
+        sidecar(baseName(VIDEO_NAME) + ".extras.srt");
         // A second video in the same folder keeps its own sidecar.
-        Video("Other.Movie.2020.mkv");
-        Sidecar("Other.Movie.2020.srt");
+        this.video("Other.Movie.2020.mkv");
+        sidecar("Other.Movie.2020.srt");
 
         var found = SidecarSubtitles.Find(video);
 
@@ -194,9 +194,9 @@ public class SidecarSubtitleTests
     [Test]
     public void EachVideoGetsItsOwnSidecarFromASharedFolder()
     {
-        var first = Video(VideoName);
-        var second = Video("Other.Movie.2020.mkv");
-        var secondSub = Sidecar("Other.Movie.2020.srt");
+        var first = video(VIDEO_NAME);
+        var second = video("Other.Movie.2020.mkv");
+        var secondSub = sidecar("Other.Movie.2020.srt");
 
         Assert.That(SidecarSubtitles.Find(first), Is.Empty);
         Assert.That(SidecarSubtitles.Find(second).Select(x => x.FilePath), Is.EqualTo(new[] { secondSub }));

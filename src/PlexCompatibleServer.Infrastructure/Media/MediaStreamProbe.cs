@@ -47,11 +47,11 @@ public sealed class MediaFileInfo
 /// </summary>
 public static class MediaStreamProbe
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions json = new(JsonSerializerDefaults.Web);
 
     public static string ResolveFfprobe()
     {
-        foreach (var candidate in Candidates())
+        foreach (var candidate in candidates())
         {
             if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
                 return Path.GetFullPath(candidate);
@@ -60,7 +60,7 @@ public static class MediaStreamProbe
         return "";
     }
 
-    private static IEnumerable<string> Candidates()
+    private static IEnumerable<string> candidates()
     {
         yield return Environment.GetEnvironmentVariable("PLEX_FFPROBE") ?? "";
 
@@ -113,7 +113,7 @@ public static class MediaStreamProbe
             var json = await stdout;
             await errors;
 
-            return Parse(json, path);
+            return parse(json, path);
         }
         catch (OperationCanceledException)
         {
@@ -129,7 +129,7 @@ public static class MediaStreamProbe
     /// <summary>Last probe failure, for diagnostics only.</summary>
     public static string ProbeFailure { get; private set; } = "";
 
-    private static MediaFileInfo? Parse(string json, string path)
+    private static MediaFileInfo? parse(string json, string path)
     {
         if (string.IsNullOrWhiteSpace(json)) return null;
 
@@ -143,10 +143,10 @@ public static class MediaStreamProbe
 
         if (root.TryGetProperty("format", out var format))
         {
-            if (Double(format, "duration") is double seconds)
+            if (@double(format, "duration") is double seconds)
                 result.DurationMs = (int)Math.Round(seconds * 1000);
 
-            result.Bitrate = Int(format, "bit_rate");
+            result.Bitrate = @int(format, "bit_rate");
 
             if (format.TryGetProperty("format_name", out var fn) && fn.GetString() is { Length: > 0 } name)
                 result.Container = name.Split(',')[0];
@@ -181,14 +181,14 @@ public static class MediaStreamProbe
 
                     entry.StreamType = 1;
                     result.VideoCodec = codec ?? "";
-                    result.Width = Int(stream, "width");
-                    result.Height = Int(stream, "height");
-                    result.FrameRate = FrameRate(stream);
+                    result.Width = @int(stream, "width");
+                    result.Height = @int(stream, "height");
+                    result.FrameRate = frameRate(stream);
                     entry.Width = result.Width;
                     entry.Height = result.Height;
                     entry.FrameRate = result.FrameRate;
-                    entry.Bitrate = Int(stream, "bit_rate");
-                    entry.SamplingRate = Int(stream, "sample_rate");
+                    entry.Bitrate = @int(stream, "bit_rate");
+                    entry.SamplingRate = @int(stream, "sample_rate");
 
                     var profile = stream.TryGetProperty("profile", out var pr) ? pr.GetString() : null;
                     if (!string.IsNullOrEmpty(profile)) result.VideoProfile = profile;
@@ -198,12 +198,12 @@ public static class MediaStreamProbe
 
                 case "audio":
                     entry.StreamType = 2;
-                    entry.Channels = Int(stream, "channels");
-                    entry.Bitrate = Int(stream, "bit_rate");
-                    entry.SamplingRate = Int(stream, "sample_rate");
+                    entry.Channels = @int(stream, "channels");
+                    entry.Bitrate = @int(stream, "bit_rate");
+                    entry.SamplingRate = @int(stream, "sample_rate");
                     result.AudioCodec = string.IsNullOrEmpty(result.AudioCodec) ? (codec ?? "") : result.AudioCodec;
                     result.AudioChannels = result.AudioChannels == 0 ? entry.Channels ?? 0 : result.AudioChannels;
-                    entry.LanguageCode = Lang(stream, "language");
+                    entry.LanguageCode = lang(stream, "language");
                     entry.Language = stream.TryGetProperty("tags", out var at) &&
                                      at.TryGetProperty("language", out var al) ? (al.GetString() ?? "") : "";
                     result.Streams.Add(entry);
@@ -211,7 +211,7 @@ public static class MediaStreamProbe
 
                 case "subtitle":
                     entry.StreamType = 3;
-                    entry.LanguageCode = Lang(stream, "language");
+                    entry.LanguageCode = lang(stream, "language");
                     entry.Language = stream.TryGetProperty("tags", out var st) &&
                                      st.TryGetProperty("language", out var sl) ? (sl.GetString() ?? "") : "";
                     result.Streams.Add(entry);
@@ -222,7 +222,7 @@ public static class MediaStreamProbe
         return result;
     }
 
-    private static double Double(JsonElement source, string key)
+    private static double @double(JsonElement source, string key)
     {
         if (!source.TryGetProperty(key, out var value)) return 0;
 
@@ -235,11 +235,11 @@ public static class MediaStreamProbe
         };
     }
 
-    private static string Lang(JsonElement stream, string key) =>
+    private static string lang(JsonElement stream, string key) =>
         stream.TryGetProperty("tags", out var tags) && tags.TryGetProperty(key, out var v) ? (v.GetString() ?? "") : "";
 
     /// <summary>ffprobe emits some numeric fields as JSON strings and some as numbers.</summary>
-    private static int Int(JsonElement stream, string key)
+    private static int @int(JsonElement stream, string key)
     {
         if (!stream.TryGetProperty(key, out var value)) return 0;
 
@@ -251,9 +251,9 @@ public static class MediaStreamProbe
         };
     }
 
-    private static double FrameRate(JsonElement stream)
+    private static double frameRate(JsonElement stream)
     {
-        if (Double(stream, "r_frame_rate") is double value && value > 0)
+        if (@double(stream, "r_frame_rate") is double value && value > 0)
             return Math.Round(value, 3);
 
         if (!stream.TryGetProperty("r_frame_rate", out var rf) || rf.GetString() is not { Length: > 0 } text)

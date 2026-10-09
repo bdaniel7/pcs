@@ -13,10 +13,10 @@ public enum MetadataSyncReason
 /// </summary>
 public sealed class MetadataSyncTrigger
 {
-    private readonly Channel<MetadataSyncReason> _requests =
+    private readonly Channel<MetadataSyncReason> requests =
         Channel.CreateUnbounded<MetadataSyncReason>(new UnboundedChannelOptions { SingleReader = true });
 
-    public ChannelReader<MetadataSyncReason> Requests => _requests.Reader;
+    public ChannelReader<MetadataSyncReason> Requests => requests.Reader;
 
-    public bool Request(MetadataSyncReason reason) => _requests.Writer.TryWrite(reason);
+    public bool Request(MetadataSyncReason reason) => requests.Writer.TryWrite(reason);
 }

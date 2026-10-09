@@ -26,9 +26,9 @@ public sealed record SidecarSubtitle(
 public static class SidecarSubtitles
 {
     /// <summary>Untagged sidecars carry no language; report them the way the client expects.</summary>
-    private static readonly LanguageCode DefaultLanguage = new("en", "eng", "English");
+    private static readonly LanguageCode defaultLanguage = new("en", "eng", "English");
 
-    private static readonly string[] Qualifiers =
+    private static readonly string[] qualifiers =
         ["forced", "sdh", "cc", "hi", "deaf", "default"];
 
     /// <summary>
@@ -37,7 +37,7 @@ public static class SidecarSubtitles
     /// cache expires when the directory itself changes or after a short TTL, so a sidecar dropped
     /// in while the server runs still shows up without a rescan.
     /// </summary>
-    private static readonly TimeSpan ListingTtl = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan listingTtl = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Upper bound on cached directory listings. Directories that come and go would otherwise pin
@@ -46,7 +46,7 @@ public static class SidecarSubtitles
     /// </summary>
     internal static int MaxListings { get; set; } = 512;
 
-    private static readonly ConcurrentDictionary<string, Listing> Listings = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, Listing> listings = new(StringComparer.Ordinal);
 
     private sealed record Listing(long Stamp, DateTime LoadedAt, string[] Files);
 
@@ -60,7 +60,7 @@ public static class SidecarSubtitles
 
         var matches = new List<(int Order, string Name, SidecarSubtitle Sub)>();
 
-        foreach (var file in ListDirectory(directory))
+        foreach (var file in listDirectory(directory))
         {
             var name = Path.GetFileName(file);
             if (!name.EndsWith(".srt", StringComparison.OrdinalIgnoreCase)) continue;
@@ -69,11 +69,11 @@ public static class SidecarSubtitles
                 name.Equals(fileName + ".srt", StringComparison.OrdinalIgnoreCase))
             {
                 matches.Add((0, name, new SidecarSubtitle(file,
-                    DefaultLanguage.Three, DefaultLanguage.Two, DefaultLanguage.Name, false, false)));
+                    defaultLanguage.Three, defaultLanguage.Two, defaultLanguage.Name, false, false)));
                 continue;
             }
 
-            if (ParseTagged(name, stem, fileName, file) is { } tagged)
+            if (parseTagged(name, stem, fileName, file) is { } tagged)
                 matches.Add((1, name, tagged));
         }
 
@@ -85,21 +85,21 @@ public static class SidecarSubtitles
             .ToList();
     }
 
-    private static SidecarSubtitle? ParseTagged(string name, string stem, string fileName, string path)
+    private static SidecarSubtitle? parseTagged(string name, string stem, string fileName, string path)
     {
         // The container-qualified prefix is tried first: "Movie.mp4.en.srt" has to be read as
         // "en" against "Movie.mp4", where reading it against the stem would yield "mp4.en".
         foreach (var prefix in new[] { fileName, stem })
         {
-            var rest = Slice(name, prefix);
+            var rest = slice(name, prefix);
             if (rest is null) continue;
-            if (ParseTokens(rest, path) is { } parsed) return parsed;
+            if (parseTokens(rest, path) is { } parsed) return parsed;
         }
 
         return null;
     }
 
-    private static string? Slice(string name, string prefix)
+    private static string? slice(string name, string prefix)
     {
         prefix += ".";
         if (name.Length <= prefix.Length) return null;
@@ -108,7 +108,7 @@ public static class SidecarSubtitles
             : null;
     }
 
-    private static SidecarSubtitle? ParseTokens(string rest, string path)
+    private static SidecarSubtitle? parseTokens(string rest, string path)
     {
         if (!rest.EndsWith(".srt", StringComparison.OrdinalIgnoreCase)) return null;
 
@@ -118,9 +118,9 @@ public static class SidecarSubtitles
         LanguageCode? language = null;
         var start = 0;
 
-        if (!Qualifiers.Contains(tokens[0], StringComparer.OrdinalIgnoreCase))
+        if (!qualifiers.Contains(tokens[0], StringComparer.OrdinalIgnoreCase))
         {
-            language = ResolveLanguage(tokens[0]);
+            language = resolveLanguage(tokens[0]);
             if (language is null) return null;
             start = 1;
         }
@@ -148,11 +148,11 @@ public static class SidecarSubtitles
             }
         }
 
-        language ??= DefaultLanguage;
+        language ??= defaultLanguage;
         return new SidecarSubtitle(path, language.Three, language.Two, language.Name, forced, caption);
     }
 
-    private static LanguageCode? ResolveLanguage(string token)
+    private static LanguageCode? resolveLanguage(string token)
     {
         // Regional spellings such as "pt-BR" or "en-US" keep the region in the tag, the way the
         // client reports it back, but the base language supplies the code and the display name.
@@ -167,7 +167,7 @@ public static class SidecarSubtitles
             region = region.ToUpperInvariant();
         }
 
-        if (LanguageLookup.TryGetValue(tag, out var known))
+        if (languageLookup.TryGetValue(tag, out var known))
         {
             if (region.Length == 0) return known;
             return new LanguageCode($"{known.Two}-{region}", known.Three,
@@ -198,7 +198,7 @@ public static class SidecarSubtitles
 
         var trimmed = candidate.Trim();
         if (trimmed.Length is 2 or 3 && trimmed.All(char.IsAsciiLetter) &&
-            LanguageLookup.TryGetValue(trimmed, out var known))
+            languageLookup.TryGetValue(trimmed, out var known))
         {
             return known.Name;
         }
@@ -215,12 +215,12 @@ public static class SidecarSubtitles
         if (string.IsNullOrWhiteSpace(languageCode)) return "";
 
         var trimmed = languageCode.Trim();
-        if (LanguageLookup.TryGetValue(trimmed, out var known)) return known.Two;
+        if (languageLookup.TryGetValue(trimmed, out var known)) return known.Two;
         if (trimmed.Length is 2 or 3 && trimmed.All(char.IsAsciiLetter)) return trimmed.ToLowerInvariant();
         return trimmed;
     }
 
-    private static string[] ListDirectory(string directory)
+    private static string[] listDirectory(string directory)
     {
         DateTime loadedAt;
         try
@@ -228,34 +228,34 @@ public static class SidecarSubtitles
             loadedAt = DateTime.UtcNow;
             var stamp = Directory.GetLastWriteTimeUtc(directory).Ticks;
 
-            if (Listings.TryGetValue(directory, out var cached) &&
+            if (listings.TryGetValue(directory, out var cached) &&
                 cached.Stamp == stamp &&
-                loadedAt - cached.LoadedAt < ListingTtl)
+                loadedAt - cached.LoadedAt < listingTtl)
             {
                 return cached.Files;
             }
 
             var files = Directory.GetFiles(directory);
-            Listings[directory] = new Listing(stamp, loadedAt, files);
-            TrimListings();
+            listings[directory] = new Listing(stamp, loadedAt, files);
+            trimListings();
             return files;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // A listing that cannot be read is better served from cache than as no subtitles.
-            return Listings.TryGetValue(directory, out var stale) ? stale.Files : [];
+            return listings.TryGetValue(directory, out var stale) ? stale.Files : [];
         }
     }
 
     /// <summary>Drops the entries loaded longest ago once the listing store exceeds its cap.</summary>
-    private static void TrimListings()
+    private static void trimListings()
     {
-        var excess = Listings.Count - MaxListings;
+        var excess = listings.Count - MaxListings;
         if (excess <= 0) return;
 
-        foreach (var stale in Listings.OrderBy(static x => x.Value.LoadedAt).Take(excess))
+        foreach (var stale in listings.OrderBy(static x => x.Value.LoadedAt).Take(excess))
         {
-            Listings.TryRemove(stale.Key, out _);
+            listings.TryRemove(stale.Key, out _);
         }
     }
 
@@ -263,7 +263,7 @@ public static class SidecarSubtitles
 
     // ISO 639-1 / 639-2 pairs plus the display name clients render in the subtitle menu.
     // The 639-2/B spellings (fre/ger/dut/chi/...) are the ones Plex reports as languageCode.
-    private static readonly (string Two, string Three, string Name)[] KnownLanguages =
+    private static readonly (string Two, string Three, string Name)[] knownLanguages =
     [
         ("en", "eng", "English"), ("es", "spa", "Spanish"), ("fr", "fre", "French"),
         ("de", "ger", "German"), ("it", "ita", "Italian"), ("pt", "por", "Portuguese"),
@@ -292,13 +292,13 @@ public static class SidecarSubtitles
         ("ur", "urd", "Urdu"), ("yi", "yid", "Yiddish")
     ];
 
-    private static readonly Dictionary<string, LanguageCode> LanguageLookup = BuildLanguageLookup();
+    private static readonly Dictionary<string, LanguageCode> languageLookup = buildLanguageLookup();
 
-    private static Dictionary<string, LanguageCode> BuildLanguageLookup()
+    private static Dictionary<string, LanguageCode> buildLanguageLookup()
     {
         var lookup = new Dictionary<string, LanguageCode>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var (two, three, name) in KnownLanguages)
+        foreach (var (two, three, name) in knownLanguages)
         {
             var entry = new LanguageCode(two, three, name);
             lookup[two] = entry;

@@ -7,10 +7,10 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class SidecarLookupTests
 {
-    private ExternalMetadata _metadata = null!;
+    private ExternalMetadata metadata = null!;
 
     [SetUp]
-    public void SetUp() => _metadata = new ExternalMetadata();
+    public void SetUp() => metadata = new ExternalMetadata();
 
     [TestCase(@"Z:\Ser\Little.Lorraine.2025.1080p.WEBRip.x264.AAC5.1-[YTS.GG - YTS.BZ].mp4",
         "Little Lorraine")]
@@ -23,7 +23,7 @@ public class SidecarLookupTests
     public void CleanSearchTitle_strips_release_junk(string path, string expected) =>
         Assert.That(PlexTvClient.CleanSearchTitle(path), Is.EqualTo(expected));
 
-    private const string SearchJson = """
+    private const string SEARCH_JSON = """
     {
       "MediaContainer": {
         "size": 4,
@@ -52,7 +52,7 @@ public class SidecarLookupTests
     [Test]
     public void PickCandidate_prefers_exact_normalized_title_and_closest_year()
     {
-        var rec = PlexTvClient.PickCandidate(SearchJson, "Little.Lorraine", 2025);
+        var rec = PlexTvClient.PickCandidate(SEARCH_JSON, "Little.Lorraine", 2025);
 
         Assert.That(rec, Is.Not.Null);
         Assert.That(rec!.Guid, Is.EqualTo("plex://movie/EXACTYEAR"));
@@ -70,27 +70,27 @@ public class SidecarLookupTests
     [Test]
     public void PickCandidate_rejects_year_mismatch_and_unknown_titles()
     {
-        Assert.That(PlexTvClient.PickCandidate(SearchJson, "Totally Different Film", 2025),
+        Assert.That(PlexTvClient.PickCandidate(SEARCH_JSON, "Totally Different Film", 2025),
             Is.Null);
 
-        const string onlyFarYear = """
+        const string ONLY_FAR_YEAR = """
         { "MediaContainer": { "SearchResults": [ { "SearchResult": [ { "Metadata": [
           { "type": "movie", "guid": "plex://movie/FAR", "title": "Little Lorraine",
             "year": 1999, "ratingKey": "99" } ] } ] } ] } }
         """;
-        Assert.That(PlexTvClient.PickCandidate(onlyFarYear, "Little Lorraine", 2025), Is.Null);
+        Assert.That(PlexTvClient.PickCandidate(ONLY_FAR_YEAR, "Little Lorraine", 2025), Is.Null);
     }
 
     [Test]
     public void PickCandidate_accepts_missing_year_on_either_side()
     {
-        const string json = """
+        const string JSON = """
         { "MediaContainer": { "SearchResults": [ { "SearchResult": [ { "Metadata": [
           { "type": "movie", "guid": "plex://movie/NY", "title": "Carolina Caroline",
             "ratingKey": "77" } ] } ] } ] } }
         """;
-        Assert.That(PlexTvClient.PickCandidate(json, "Carolina Caroline", 2025), Is.Not.Null);
-        Assert.That(PlexTvClient.PickCandidate(json, "Carolina Caroline", null), Is.Not.Null);
+        Assert.That(PlexTvClient.PickCandidate(JSON, "Carolina Caroline", 2025), Is.Not.Null);
+        Assert.That(PlexTvClient.PickCandidate(JSON, "Carolina Caroline", null), Is.Not.Null);
     }
 
     [Test]
@@ -98,7 +98,7 @@ public class SidecarLookupTests
     {
         // Real case: "And Life Goes On" (1992) is titled "Life, and Nothing More…" on plex.tv,
         // while a 2019 film carries the exact original title.
-        const string json = """
+        const string JSON = """
         { "MediaContainer": { "SearchResults": [ { "SearchResult": [
           { "score": 0.78, "Metadata": [
             { "type": "movie", "guid": "plex://movie/RENAMED1992", "title": "Life, and Nothing More…",
@@ -110,17 +110,17 @@ public class SidecarLookupTests
         ] } ] } }
         """;
 
-        var rec = PlexTvClient.PickCandidate(json, "And.Life.Goes.On", 1992);
+        var rec = PlexTvClient.PickCandidate(JSON, "And.Life.Goes.On", 1992);
         Assert.That(rec, Is.Not.Null);
         Assert.That(rec!.Guid, Is.EqualTo("plex://movie/RENAMED1992"));
         Assert.That(rec.OriginallyAvailableAt, Is.EqualTo("1992-10-21"));
 
-        var rec2019 = PlexTvClient.PickCandidate(json, "And.Life.Goes.On", 2019);
+        var rec2019 = PlexTvClient.PickCandidate(JSON, "And.Life.Goes.On", 2019);
         Assert.That(rec2019?.Guid, Is.EqualTo("plex://movie/DECOY2019"),
             "a 2019 file must match the 2019 exact-title film, not the renamed 1992 one");
     }
 
-    private const string DetailJson = """
+    private const string DETAIL_JSON = """
     {
       "MediaContainer": {
         "Metadata": [
@@ -164,7 +164,7 @@ public class SidecarLookupTests
     {
         // Real case: "Zwei Staatsanwalte" (2025) is listed as "Two Prosecutors" - no name overlap
         // at all, but plex.tv ranks it first with a clear score lead and the year checks out.
-        const string json = """
+        const string JSON = """
         { "MediaContainer": { "SearchResults": [ { "SearchResult": [
           { "score": 0.38, "Metadata": [
             { "type": "movie", "guid": "plex://movie/TWOPROSECUTORS", "title": "Two Prosecutors",
@@ -175,7 +175,7 @@ public class SidecarLookupTests
         ] } ] } }
         """;
 
-        var rec = PlexTvClient.PickCandidate(json, "Zwei Staatsanwalte", 2025);
+        var rec = PlexTvClient.PickCandidate(JSON, "Zwei Staatsanwalte", 2025);
         Assert.That(rec, Is.Not.Null);
         Assert.That(rec!.Guid, Is.EqualTo("plex://movie/TWOPROSECUTORS"));
         Assert.That(rec.Title, Is.EqualTo("Two Prosecutors"));
@@ -184,7 +184,7 @@ public class SidecarLookupTests
     [Test]
     public void PickCandidate_fallback_rejects_wrong_year_and_weak_lead()
     {
-        const string wrongYear = """
+        const string WRONG_YEAR = """
         { "MediaContainer": { "SearchResults": [ { "SearchResult": [
           { "score": 0.30, "Metadata": [
             { "type": "movie", "guid": "plex://movie/W2017", "title": "Person to Person",
@@ -194,10 +194,10 @@ public class SidecarLookupTests
               "slug": "person-to-person", "year": 2014, "ratingKey": "84" } ] }
         ] } ] } }
         """;
-        Assert.That(PlexTvClient.PickCandidate(wrongYear, "Person To Bunny", 1960), Is.Null,
+        Assert.That(PlexTvClient.PickCandidate(WRONG_YEAR, "Person To Bunny", 1960), Is.Null,
             "a top result from another year must not be matched");
 
-        const string tiedScores = """
+        const string TIED_SCORES = """
         { "MediaContainer": { "SearchResults": [ { "SearchResult": [
           { "score": 0.30, "Metadata": [
             { "type": "movie", "guid": "plex://movie/TIE1", "title": "Peak Season",
@@ -207,17 +207,17 @@ public class SidecarLookupTests
               "slug": "druid-peak", "year": 2023, "ratingKey": "86" } ] }
         ] } ] } }
         """;
-        Assert.That(PlexTvClient.PickCandidate(tiedScores, "Pikers Peak", 2023), Is.Null,
+        Assert.That(PlexTvClient.PickCandidate(TIED_SCORES, "Pikers Peak", 2023), Is.Null,
             "a tied, barely-relevant top result is too risky to trust");
 
-        const string weakScore = """
+        const string WEAK_SCORE = """
         { "MediaContainer": { "SearchResults": [ { "SearchResult": [
           { "score": 0.31, "Metadata": [
             { "type": "movie", "guid": "plex://movie/WEAK", "title": "Something Else",
               "slug": "something-else", "year": 2025, "ratingKey": "87" } ] }
         ] } ] } }
         """;
-        Assert.That(PlexTvClient.PickCandidate(weakScore, "Unknown Film", 2025), Is.Null,
+        Assert.That(PlexTvClient.PickCandidate(WEAK_SCORE, "Unknown Film", 2025), Is.Null,
             "score below the 0.35 relevance floor must not be matched");
     }
 
@@ -232,7 +232,7 @@ public class SidecarLookupTests
             ThumbUrl = "https://stale.example/poster.jpg",
             ArtUrl = "https://stale.example/art.jpg"
         };
-        PlexTvClient.EnrichFromDetail(rec, DetailJson);
+        PlexTvClient.EnrichFromDetail(rec, DETAIL_JSON);
 
         Assert.That(rec.Guid, Is.EqualTo("plex://movie/657d04943fedcb6d9c4d23c0"));
         Assert.That(rec.Title, Is.EqualTo("Little Lorraine"));
@@ -283,9 +283,9 @@ public class SidecarLookupTests
     {
         var item = new MediaItem { Id = 1, LibraryId = 1, FilePath = @"Z:\Ser\Nope.2025.mp4", Year = 2025 };
         Assert.That(
-            await _metadata.Plex.LookupOnlineAsync(item, CancellationToken.None), Is.Null);
+            await metadata.Plex.LookupOnlineAsync(item, CancellationToken.None), Is.Null);
 
         var noTitle = new MediaItem { Id = 2, LibraryId = 1, FilePath = "", Year = 2025 };
-        Assert.That(await _metadata.Plex.LookupOnlineAsync(noTitle, CancellationToken.None), Is.Null);
+        Assert.That(await metadata.Plex.LookupOnlineAsync(noTitle, CancellationToken.None), Is.Null);
     }
 }

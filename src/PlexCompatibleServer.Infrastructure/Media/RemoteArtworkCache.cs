@@ -15,18 +15,18 @@ namespace PlexCompatibleServer.Infrastructure.Media;
 public sealed class RemoteArtworkCache
 {
     /// <summary>Named client registered with <c>AddHttpClient()</c> in Program.cs.</summary>
-    public const string HttpClientName = "remote-artwork";
+    public const string HTTP_CLIENT_NAME = "remote-artwork";
 
-    private static readonly TimeSpan DownloadTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan downloadTimeout = TimeSpan.FromSeconds(20);
 
     // A genuine poster is tens of kilobytes at minimum; smaller bodies are error pixels.
-    private const int MinImageBytes = 512;
+    private const int MIN_IMAGE_BYTES = 512;
 
-    private readonly MediaArtOptions _options;
-    private readonly Func<HttpClient> _newClient;
+    private readonly MediaArtOptions options;
+    private readonly Func<HttpClient> newClient;
 
     public RemoteArtworkCache(MediaArtOptions options, IHttpClientFactory clients)
-        : this(options, () => clients.CreateClient(HttpClientName))
+        : this(options, () => clients.CreateClient(HTTP_CLIENT_NAME))
     {
     }
 
@@ -38,14 +38,14 @@ public sealed class RemoteArtworkCache
 
     private RemoteArtworkCache(MediaArtOptions options, Func<HttpClient> newClient)
     {
-        _options = options;
-        _newClient = newClient;
+        this.options = options;
+        this.newClient = newClient;
     }
 
     public string CacheDirectory =>
-        string.IsNullOrEmpty(_options.CacheDirectory)
+        string.IsNullOrEmpty(options.CacheDirectory)
             ? MediaArtOptions.DefaultCacheDirectory
-            : _options.CacheDirectory;
+            : options.CacheDirectory;
 
     /// <summary>
     /// Ensures the image behind <paramref name="url"/> exists in the cache and returns its full
@@ -71,8 +71,8 @@ public sealed class RemoteArtworkCache
             // A fresh client per download: factory clients are cheap, and reusing one forever
             // would pin the same handler for the whole process - exactly what the factory exists
             // to avoid. Each instance is brand new, so setting Timeout here is safe.
-            var client = _newClient();
-            client.Timeout = DownloadTimeout;
+            var client = newClient();
+            client.Timeout = downloadTimeout;
 
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
 
@@ -118,7 +118,7 @@ public sealed class RemoteArtworkCache
     /// <summary>Extension matching the actual image format, or null for anything unservable.</summary>
     internal static string? SniffExtension(ReadOnlySpan<byte> bytes)
     {
-        if (bytes.Length < MinImageBytes) return null;
+        if (bytes.Length < MIN_IMAGE_BYTES) return null;
 
         if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
             return ".jpg";

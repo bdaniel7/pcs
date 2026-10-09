@@ -19,34 +19,34 @@ public sealed class StreamSelectionStore
     /// part it ever played. Cap the store and forget the least-recently-written choice once it
     /// grows past the limit.
     /// </summary>
-    internal const int MaxEntries = 1024;
+    internal const int MAX_ENTRIES = 1024;
 
-    private readonly ConcurrentDictionary<int, Entry> _selected = new();
-    private long _sequence;
+    private readonly ConcurrentDictionary<int, Entry> selected = new();
+    private long sequence;
 
     public void Set(int partId, int? audioStreamId, int? subtitleStreamId)
     {
-        var touched = Interlocked.Increment(ref _sequence);
+        var touched = Interlocked.Increment(ref sequence);
 
-        _selected.AddOrUpdate(
+        selected.AddOrUpdate(
             partId,
             _ => new Entry(audioStreamId ?? 0, subtitleStreamId ?? 0, touched),
             (_, current) => new Entry(audioStreamId ?? current.Audio, subtitleStreamId ?? current.Subtitle, touched));
 
-        Trim();
+        trim();
     }
 
     public (int Audio, int Subtitle) Get(int partId) =>
-        _selected.TryGetValue(partId, out var selected) ? (selected.Audio, selected.Subtitle) : (0, 0);
+        this.selected.TryGetValue(partId, out var selected) ? (selected.Audio, selected.Subtitle) : (0, 0);
 
-    private void Trim()
+    private void trim()
     {
-        var excess = _selected.Count - MaxEntries;
+        var excess = selected.Count - MAX_ENTRIES;
         if (excess <= 0) return;
 
-        foreach (var stale in _selected.OrderBy(static x => x.Value.Sequence).Take(excess))
+        foreach (var stale in selected.OrderBy(static x => x.Value.Sequence).Take(excess))
         {
-            _selected.TryRemove(stale.Key, out _);
+            selected.TryRemove(stale.Key, out _);
         }
     }
 

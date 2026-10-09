@@ -19,9 +19,9 @@ public sealed class PlexMediaContainer
     public int Size { get; init; }
     public string? Title1 { get; init; }
     public string? Title2 { get; init; }
-    public string? LibrarySectionID { get; init; }
+    public string? LibrarySectionId { get; init; }
     public string? LibrarySectionTitle { get; init; }
-    public string? LibrarySectionUUID { get; init; }
+    public string? LibrarySectionUuid { get; init; }
     public IReadOnlyList<PlexDirectory> Directories { get; init; } = Array.Empty<PlexDirectory>();
     public IReadOnlyList<PlexVideo> Videos { get; init; } = Array.Empty<PlexVideo>();
 }

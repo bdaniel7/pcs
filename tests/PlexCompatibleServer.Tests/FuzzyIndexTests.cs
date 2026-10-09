@@ -13,17 +13,17 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class FuzzyIndexTests
 {
-    private static readonly FieldInfo CacheField = typeof(SidecarStore)
+    private static readonly FieldInfo cacheField = typeof(SidecarStore)
         .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-    private static void SetCache(ExternalMetadata metadata, ConcurrentDictionary<string, SidecarItem> cache)
-        => CacheField.SetValue(metadata.Store, cache);
+    private static void setCache(ExternalMetadata metadata, ConcurrentDictionary<string, SidecarItem> cache)
+        => cacheField.SetValue(metadata.Store, cache);
 
     [Test]
     public void ResolveLocal_matches_a_record_by_filename_stem_containment()
     {
         var metadata = new ExternalMetadata();
-        SetCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
+        setCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
         {
             ["first"] = new SidecarItem { Title = "First Movie", FileStem = "first.movie.2019" }
         });
@@ -47,7 +47,7 @@ public class FuzzyIndexTests
         var metadata = new ExternalMetadata();
         var library = new MediaLibrary { Id = 1, Type = LibraryType.Movie };
 
-        SetCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
+        setCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
         {
             ["first"] = new SidecarItem { Title = "First Movie", FileStem = "first.movie.2019" }
         });
@@ -63,7 +63,7 @@ public class FuzzyIndexTests
         Assert.That(metadata.ResolveLocal(first, first.Title, first.Title)?.Title, Is.EqualTo("First Movie"),
             "the first cache revision must resolve through the index");
 
-        SetCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
+        setCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
         {
             ["second"] = new SidecarItem { Title = "Second Movie", FileStem = "second.movie.2020" }
         });

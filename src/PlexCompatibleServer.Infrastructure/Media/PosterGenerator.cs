@@ -11,29 +11,29 @@ namespace PlexCompatibleServer.Infrastructure.Media;
 /// </summary>
 public static class FfmpegLocator
 {
-    private static readonly Lock Gate = new();
-    private static string _cached = "";
-    private static bool _searched;
+    private static readonly Lock gate = new();
+    private static string cached = "";
+    private static bool searched;
 
     public static string Executable
     {
         get
         {
-            if (_searched) return _cached;
-            lock (Gate)
+            if (searched) return cached;
+            lock (gate)
             {
-                if (_searched) return _cached;
-                _searched = true;
-                _cached = Search();
+                if (searched) return cached;
+                searched = true;
+                cached = search();
             }
 
-            return _cached;
+            return cached;
         }
     }
 
-    private static string Search()
+    private static string search()
     {
-        foreach (var candidate in EnumerateCandidates())
+        foreach (var candidate in enumerateCandidates())
         {
             if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
                 return Path.GetFullPath(candidate);
@@ -42,7 +42,7 @@ public static class FfmpegLocator
         return "";
     }
 
-    private static IEnumerable<string> EnumerateCandidates()
+    private static IEnumerable<string> enumerateCandidates()
     {
         yield return Environment.GetEnvironmentVariable("PLEX_FFMPEG") ?? "";
 
@@ -75,28 +75,28 @@ public static class FfmpegLocator
 /// </summary>
 public sealed class PosterGenerator
 {
-    private const int PosterWidth = 600;
-    private const int PosterHeight = 900;
-    private const int ArtWidth = 1920;
-    private const int ArtHeight = 1080;
+    private const int POSTER_WIDTH = 600;
+    private const int POSTER_HEIGHT = 900;
+    private const int ART_WIDTH = 1920;
+    private const int ART_HEIGHT = 1080;
 
     /// <summary>
     /// Below this a 600x900 JPEG is essentially a flat fill. Real posters land far higher,
     /// so a smaller file means we sampled a black leader or a genuinely dark scene.
     /// </summary>
-    private const long FlatFrameBytes = 12_000;
+    private const long FLAT_FRAME_BYTES = 12_000;
 
-    private readonly MediaArtOptions _options;
-    private readonly SemaphoreSlim _throttle;
-    private readonly ILogger<PosterGenerator> _log;
-    private bool _reportedFfmpeg;
-    private bool _reportedMissingFfmpeg;
+    private readonly MediaArtOptions options;
+    private readonly SemaphoreSlim throttle;
+    private readonly ILogger<PosterGenerator> log;
+    private bool reportedFfmpeg;
+    private bool reportedMissingFfmpeg;
 
     public PosterGenerator(MediaArtOptions options, ILogger<PosterGenerator> log)
     {
-        _options = options;
-        _throttle = new SemaphoreSlim(Math.Max(1, options.MaxConcurrency));
-        _log = log;
+        this.options = options;
+        throttle = new SemaphoreSlim(Math.Max(1, options.MaxConcurrency));
+        this.log = log;
     }
 
     /// <summary>Resolves ffmpeg, reporting once per process when it is unavailable.</summary>
@@ -105,19 +105,19 @@ public sealed class PosterGenerator
         var resolved = FfmpegLocator.Executable;
         if (!string.IsNullOrEmpty(resolved))
         {
-            if (!_reportedFfmpeg)
+            if (!reportedFfmpeg)
             {
-                _log.LogInformation("Artwork generation using ffmpeg at {Path}", resolved);
-                _reportedFfmpeg = true;
+                log.LogInformation("Artwork generation using ffmpeg at {Path}", resolved);
+                reportedFfmpeg = true;
             }
 
             return resolved;
         }
 
-        if (!_reportedMissingFfmpeg)
+        if (!reportedMissingFfmpeg)
         {
-            _reportedMissingFfmpeg = true;
-            _log.LogWarning(
+            reportedMissingFfmpeg = true;
+            log.LogWarning(
                 "ffmpeg not found; media without a sidecar image will show no artwork. " +
                 "Set Media:Art:FfmpegPath in appsettings.json or the PLEX_FFMPEG environment variable.");
         }
@@ -131,60 +131,60 @@ public sealed class PosterGenerator
     /// </summary>
     public async Task<string?> EnsurePosterAsync(string videoPath, int? durationMs, CancellationToken ct)
     {
-        if (!_options.Enabled || durationMs == null) return null;
+        if (!options.Enabled || durationMs == null) return null;
 
-        var cacheDir = string.IsNullOrEmpty(_options.CacheDirectory) ? MediaArtOptions.DefaultCacheDirectory : _options.CacheDirectory;
-        var outPath = Path.Combine(cacheDir, CacheKey(videoPath) + "-poster.jpg");
+        var cacheDir = string.IsNullOrEmpty(options.CacheDirectory) ? MediaArtOptions.DefaultCacheDirectory : options.CacheDirectory;
+        var outPath = Path.Combine(cacheDir, cacheKey(videoPath) + "-poster.jpg");
 
-        if (HasContent(outPath)) return outPath;
+        if (hasContent(outPath)) return outPath;
 
         var ffmpeg = ResolveFfmpeg();
         if (string.IsNullOrEmpty(ffmpeg)) return null;
 
-        await _throttle.WaitAsync(ct);
+        await throttle.WaitAsync(ct);
         try
         {
-            if (HasContent(outPath)) return outPath;
+            if (hasContent(outPath)) return outPath;
 
             Directory.CreateDirectory(cacheDir);
-            var candidate = Path.Combine(cacheDir, CacheKey(videoPath) + "-candidate.jpg");
+            var candidate = Path.Combine(cacheDir, cacheKey(videoPath) + "-candidate.jpg");
 
-            foreach (var seek in SeekOffsets(durationMs))
+            foreach (var seek in seekOffsets(durationMs))
             {
-                var ok = await RunAsync(ffmpeg, BuildPosterArgs(videoPath, candidate, seek), ct);
-                if (!ok || !HasContent(candidate)) continue;
+                var ok = await runAsync(ffmpeg, buildPosterArgs(videoPath, candidate, seek), ct);
+                if (!ok || !hasContent(candidate)) continue;
 
                 // A flat frame (black leader, dark night scene) compresses to a tiny JPEG even
                 // at high quality, while a normal one lands well above this. Keep sampling other
                 // offsets when the frame looks empty, otherwise a still frame reads as "no poster".
                 var size = new FileInfo(candidate).Length;
-                if (size < FlatFrameBytes)
+                if (size < FLAT_FRAME_BYTES)
                 {
-                    _log.LogDebug("Frame at {Seek}s for {Video} looked flat ({Size} bytes), sampling later offset",
+                    log.LogDebug("Frame at {Seek}s for {Video} looked flat ({Size} bytes), sampling later offset",
                         seek, Path.GetFileName(videoPath), size);
                     continue;
                 }
 
                 File.Move(candidate, outPath, overwrite: true);
-                _log.LogInformation("Generated poster for {Video}", Path.GetFileName(videoPath));
+                log.LogInformation("Generated poster for {Video}", Path.GetFileName(videoPath));
                 return outPath;
             }
 
-            TryDelete(candidate);
+            tryDelete(candidate);
             return "";
         }
         finally
         {
-            _throttle.Release();
+            throttle.Release();
         }
     }
 
-    private static string[] BuildPosterArgs(string source, string outPath, double seek) =>
+    private static string[] buildPosterArgs(string source, string outPath, double seek) =>
     [
         "-ss", seek.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
         "-i", source,
         "-frames:v", "1",
-        "-vf", $"scale={PosterWidth}:{PosterHeight}:force_original_aspect_ratio=increase,crop={PosterWidth}:{PosterHeight}",
+        "-vf", $"scale={POSTER_WIDTH}:{POSTER_HEIGHT}:force_original_aspect_ratio=increase,crop={POSTER_WIDTH}:{POSTER_HEIGHT}",
         "-q:v", "3",
         "-y", outPath
     ];
@@ -193,10 +193,10 @@ public sealed class PosterGenerator
     /// Tries several points in the runtime and lets the caller keep the first non-flat one.
     /// Starts early enough to skip opening logos but late enough to pass title cards.
     /// </summary>
-    private IEnumerable<double> SeekOffsets(int? durationMs)
+    private IEnumerable<double> seekOffsets(int? durationMs)
     {
         if (durationMs == null) yield break;
-        var primary = PrimarySeek(durationMs);
+        var primary = primarySeek(durationMs);
         yield return primary;
 
         if (durationMs <= 0)
@@ -223,44 +223,44 @@ public sealed class PosterGenerator
     /// </summary>
     public async Task<string?> EnsureArtAsync(string videoPath, int? durationMs, string? posterPath, CancellationToken ct)
     {
-        if (!_options.Enabled || durationMs == null) return null;
+        if (!options.Enabled || durationMs == null) return null;
 
-        var cacheDir = string.IsNullOrEmpty(_options.CacheDirectory) ? MediaArtOptions.DefaultCacheDirectory : _options.CacheDirectory;
-        var outPath = Path.Combine(cacheDir, CacheKey(videoPath) + "-art.jpg");
+        var cacheDir = string.IsNullOrEmpty(options.CacheDirectory) ? MediaArtOptions.DefaultCacheDirectory : options.CacheDirectory;
+        var outPath = Path.Combine(cacheDir, cacheKey(videoPath) + "-art.jpg");
 
-        if (HasContent(outPath)) return outPath;
+        if (hasContent(outPath)) return outPath;
 
         var ffmpeg = ResolveFfmpeg();
         if (string.IsNullOrEmpty(ffmpeg)) return null;
 
-        await _throttle.WaitAsync(ct);
+        await throttle.WaitAsync(ct);
         try
         {
-            if (HasContent(outPath)) return outPath;
+            if (hasContent(outPath)) return outPath;
 
             Directory.CreateDirectory(cacheDir);
 
-            var ok = await RunAsync(ffmpeg, BuildArtArgs(videoPath, outPath, PrimarySeek(durationMs)), ct);
+            var ok = await runAsync(ffmpeg, buildArtArgs(videoPath, outPath, primarySeek(durationMs)), ct);
 
-            if (ok && HasContent(outPath)) return outPath;
+            if (ok && hasContent(outPath)) return outPath;
 
             // Fall back to stretching the poster. This works because a still has no timeline to seek.
             if (!string.IsNullOrEmpty(posterPath) && File.Exists(posterPath))
             {
-                ok = await RunAsync(ffmpeg, BuildArtArgs(posterPath, outPath, -1), ct);
-                if (ok && HasContent(outPath)) return outPath;
+                ok = await runAsync(ffmpeg, buildArtArgs(posterPath, outPath, -1), ct);
+                if (ok && hasContent(outPath)) return outPath;
             }
 
-            TryDelete(outPath);
+            tryDelete(outPath);
             return "";
         }
         finally
         {
-            _throttle.Release();
+            throttle.Release();
         }
     }
 
-    private static string[] BuildArtArgs(string source, string outPath, double seek)
+    private static string[] buildArtArgs(string source, string outPath, double seek)
     {
         var args = new List<string>();
 
@@ -275,8 +275,8 @@ public sealed class PosterGenerator
         [
             "-i", source,
             "-frames:v", "1",
-            "-vf", $"scale={ArtWidth}:{ArtHeight}:force_original_aspect_ratio=increase," +
-                    $"crop={ArtWidth}:{ArtHeight},gblur=sigma=18",
+            "-vf", $"scale={ART_WIDTH}:{ART_HEIGHT}:force_original_aspect_ratio=increase," +
+                    $"crop={ART_WIDTH}:{ART_HEIGHT},gblur=sigma=18",
             "-q:v", "4",
             "-y", outPath
         ]);
@@ -285,32 +285,32 @@ public sealed class PosterGenerator
     }
 
     /// <summary>ffmpeg can exit 0 after writing nothing, so always confirm bytes landed on disk.</summary>
-    private static bool HasContent(string path) => File.Exists(path) && new FileInfo(path).Length > 0;
+    private static bool hasContent(string path) => File.Exists(path) && new FileInfo(path).Length > 0;
 
     /// <summary>
     /// The offset used for the first attempt, and the one the backdrop reuses so that the
     /// blurred art lines up with the poster's still.
     /// </summary>
-    private double PrimarySeek(int? durationMs)
+    private double primarySeek(int? durationMs)
     {
         if (durationMs == null || durationMs <= 0) return 30;
 
-        var fraction = Math.Clamp(_options.FrameSeekFraction, 0.01, 0.9);
+        var fraction = Math.Clamp(options.FrameSeekFraction, 0.01, 0.9);
         var seconds = durationMs.Value / 1000.0 * fraction;
 
         // Stay well clear of the very end, where trailers and credit cards live.
         return Math.Clamp(seconds, 10, Math.Max(10, durationMs.Value / 1000.0 - 30));
     }
-    private static string CacheKey(string videoPath)
+    private static string cacheKey(string videoPath)
     {
         var info = new FileInfo(videoPath);
         var material = $"{videoPath}|{info.Length}|{info.LastWriteTimeUtc.Ticks}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)))[..24].ToLowerInvariant();
     }
 
-    private async Task<bool> RunAsync(string ffmpeg, IReadOnlyList<string> args, CancellationToken ct)
+    private async Task<bool> runAsync(string ffmpeg, IReadOnlyList<string> args, CancellationToken ct)
     {
-        var input = InputPathOf(args);
+        var input = inputPathOf(args);
         var info = new ProcessStartInfo(ffmpeg)
         {
             RedirectStandardError = true,
@@ -339,38 +339,38 @@ public sealed class PosterGenerator
             await drained;
 
             if (process.ExitCode != 0)
-                _log.LogDebug("ffmpeg exited {Code} for {Video}", process.ExitCode, input);
+                log.LogDebug("ffmpeg exited {Code} for {Video}", process.ExitCode, input);
 
             return true;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            _log.LogWarning("Timed out extracting artwork from {Video}", input);
-            TryKill(process);
+            log.LogWarning("Timed out extracting artwork from {Video}", input);
+            tryKill(process);
             return false;
         }
         catch (Exception ex)
         {
-            _log.LogWarning(ex, "Artwork extraction failed for {Video}", input);
-            TryKill(process);
+            log.LogWarning(ex, "Artwork extraction failed for {Video}", input);
+            tryKill(process);
             return false;
         }
     }
 
-    private static string InputPathOf(IReadOnlyList<string> args)
+    private static string inputPathOf(IReadOnlyList<string> args)
     {
         for (var i = 0; i < args.Count - 1; i++)
             if (args[i] == "-i") return args[i + 1];
         return "unknown";
     }
 
-    private static void TryKill(Process? process)
+    private static void tryKill(Process? process)
     {
         try { if (process is { HasExited: false }) process.Kill(entireProcessTree: true); }
         catch { /* best effort */ }
     }
 
-    private static void TryDelete(string path)
+    private static void tryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
         catch { /* best effort */ }

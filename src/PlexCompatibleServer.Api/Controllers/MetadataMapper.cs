@@ -99,7 +99,7 @@ internal static class MetadataMapper
             foreach (var g in rec.Genres)
             {
                 if (string.IsNullOrEmpty(g)) continue;
-                video.Genres.Add(new XmlTag { Id = GenerateId(item.Id, "genre", g), Tag = g, Filter = $"genre={g}" });
+                video.Genres.Add(new XmlTag { Id = generateId(item.Id, "genre", g), Tag = g, Filter = $"genre={g}" });
             }
         }
 
@@ -108,7 +108,7 @@ internal static class MetadataMapper
             foreach (var c in rec.Countries)
             {
                 if (string.IsNullOrEmpty(c)) continue;
-                video.Countries.Add(new XmlTag { Id = GenerateId(item.Id, "country", c), Tag = c, Filter = $"country={c}" });
+                video.Countries.Add(new XmlTag { Id = generateId(item.Id, "country", c), Tag = c, Filter = $"country={c}" });
             }
         }
 
@@ -118,7 +118,7 @@ internal static class MetadataMapper
             {
                 video.Directors.Add(new XmlTag
                 {
-                    Id = d.TagKey ?? GenerateId(item.Id, "director", d.Tag),
+                    Id = d.TagKey ?? generateId(item.Id, "director", d.Tag),
                     Tag = d.Tag ?? "Unknown",
                     TagKey = d.TagKey,
                     Thumb = d.Thumb,
@@ -133,7 +133,7 @@ internal static class MetadataMapper
             {
                 video.Writers.Add(new XmlTag
                 {
-                    Id = w.TagKey ?? GenerateId(item.Id, "writer", w.Tag),
+                    Id = w.TagKey ?? generateId(item.Id, "writer", w.Tag),
                     Tag = w.Tag ?? "Unknown",
                     TagKey = w.TagKey,
                     Thumb = w.Thumb,
@@ -148,7 +148,7 @@ internal static class MetadataMapper
             {
                 video.Producers.Add(new XmlTag
                 {
-                    Id = p.TagKey ?? GenerateId(item.Id, "producer", p.Tag),
+                    Id = p.TagKey ?? generateId(item.Id, "producer", p.Tag),
                     Tag = p.Tag ?? "Unknown",
                     TagKey = p.TagKey,
                     Thumb = p.Thumb,
@@ -164,7 +164,7 @@ internal static class MetadataMapper
             {
                 video.Roles.Add(new XmlTag
                 {
-                    Id = a.TagKey ?? GenerateId(item.Id, "actor", a.Tag),
+                    Id = a.TagKey ?? generateId(item.Id, "actor", a.Tag),
                     Tag = a.Tag ?? "Unknown",
                     TagKey = a.TagKey,
                     Thumb = a.Thumb,
@@ -216,7 +216,7 @@ internal static class MetadataMapper
         }
     }
 
-    private static string GenerateId(int seed,
+    private static string generateId(int seed,
                                      string kind,
                                      string? tag)
     {

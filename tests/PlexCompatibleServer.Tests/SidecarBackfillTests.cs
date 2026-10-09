@@ -8,16 +8,16 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class SidecarBackfillTests
 {
-    private ExternalMetadata _metadata = null!;
+    private ExternalMetadata metadata = null!;
 
     [SetUp]
-    public void SetUp() => _metadata = new ExternalMetadata();
+    public void SetUp() => metadata = new ExternalMetadata();
 
-    private void ResetSidecarCache()
+    private void resetSidecarCache()
     {
         typeof(SidecarStore)
             .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(_metadata.Store, null);
+            .SetValue(metadata.Store, null);
     }
 
     [Test]
@@ -25,7 +25,7 @@ public class SidecarBackfillTests
     {
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         var sidecar = Path.Combine(wwwroot, "plex-metadata.json");
-        ResetSidecarCache();
+        resetSidecarCache();
         try
         {
             var rec = new SidecarItem
@@ -36,14 +36,14 @@ public class SidecarBackfillTests
                 Summary = "A summary written by the backfill."
             };
 
-            _metadata.Store.UpsertSidecar("backfilltestkey", rec);
+            metadata.Store.UpsertSidecar("backfilltestkey", rec);
 
             Assert.That(File.Exists(sidecar), Is.True, "sidecar file not written");
             var raw = File.ReadAllText(sidecar);
             Assert.That(raw, Does.Contain("backfilltestkey"));
             Assert.That(raw, Does.Contain("plex://movie/aaaaaaaaaaaaaaaaaaaaaaaa"));
 
-            ResetSidecarCache();
+            resetSidecarCache();
             var item = new MediaItem
             {
                 Id = 991,
@@ -51,7 +51,7 @@ public class SidecarBackfillTests
                 FilePath = @"G:\Movies\Backfill.Test.2024.mp4",
                 Year = 2024
             };
-            Assert.That(_metadata.HasRecord(item), Is.True,
+            Assert.That(metadata.HasRecord(item), Is.True,
                 "record written by the backfill must be served");
         }
         finally
@@ -63,7 +63,7 @@ public class SidecarBackfillTests
                     Directory.Delete(wwwroot);
             }
             catch { }
-            ResetSidecarCache();
+            resetSidecarCache();
         }
     }
 
@@ -72,7 +72,7 @@ public class SidecarBackfillTests
     {
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         var sidecar = Path.Combine(wwwroot, "plex-metadata.json");
-        ResetSidecarCache();
+        resetSidecarCache();
         try
         {
             var covered = new MediaItem
@@ -82,7 +82,7 @@ public class SidecarBackfillTests
                 FilePath = @"G:\Movies\Backfill.Test.2024.mp4",
                 Year = 2024
             };
-            _metadata.Store.UpsertSidecar("backfilltestkey", new SidecarItem
+            metadata.Store.UpsertSidecar("backfilltestkey", new SidecarItem
             {
                 Title = "Backfill Test",
                 Guid = "plex://movie/aaaaaaaaaaaaaaaaaaaaaaaa"
@@ -91,7 +91,7 @@ public class SidecarBackfillTests
             // Library is null -> the movie-only gate must reject it before any network call.
             var gated = new MediaItem { Id = 2, Title = "Whatever", FilePath = @"G:\Movies\Whatever.2024.mp4", Year = 2024 };
 
-            var result = await _metadata.BackfillAsync(new[] { covered, gated }, CancellationToken.None);
+            var result = await metadata.BackfillAsync(new[] { covered, gated }, CancellationToken.None);
 
             Assert.That(result.Scanned, Is.EqualTo(2));
             Assert.That(result.Present, Is.EqualTo(1), "covered item must be skipped");
@@ -107,7 +107,7 @@ public class SidecarBackfillTests
                     Directory.Delete(wwwroot);
             }
             catch { }
-            ResetSidecarCache();
+            resetSidecarCache();
         }
     }
 }

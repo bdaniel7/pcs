@@ -9,20 +9,20 @@ namespace PlexCompatibleServer.Api.Controllers;
 [ApiController]
 public sealed class MediaController : ControllerBase
 {
-    private readonly IMediaRepository _repo;
-    private readonly ServerOptions _options;
+    private readonly IMediaRepository repo;
+    private readonly ServerOptions options;
 
     public MediaController(IMediaRepository repo, ServerOptions options)
     {
-        _repo = repo;
-        _options = options;
+        this.repo = repo;
+        this.options = options;
     }
 
     [HttpGet("/media/providers")]
     [Produces("application/xml", "application/json")]
     public async Task<IActionResult> Providers(CancellationToken ct)
     {
-        var libraries = await _repo.GetLibrariesAsync(ct);
+        var libraries = await repo.GetLibrariesAsync(ct);
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         var content = new XmlProviderFeature
@@ -44,7 +44,7 @@ public sealed class MediaController : ControllerBase
                 Language = "en-US",
                 Refreshing = "0",
                 Scanner = library.Type == LibraryType.Movie ? "Plex Movie" : "Plex TV Series",
-                Uuid = _options.LibraryUuid(library.Id, library.Name, type),
+                Uuid = options.LibraryUuid(library.Id, library.Name, type),
                 Id = library.Id.ToString(),
                 Key = $"/library/sections/{library.Id}",
                 HubKey = $"/hubs/sections/{library.Id}",
@@ -66,7 +66,7 @@ public sealed class MediaController : ControllerBase
                     new XmlProviderPivot
                     {
                         Id = "library",
-                        Key = $"/library/sections/{library.Id}/all?type={PlexTypeId(library.Type)}",
+                        Key = $"/library/sections/{library.Id}/all?type={plexTypeId(library.Type)}",
                         Type = "list",
                         Title = "Library",
                         Context = "content.library",
@@ -111,10 +111,10 @@ public sealed class MediaController : ControllerBase
         var result = ServerInfo.Build(new XmlMediaProviderContainer
         {
             Size = 1,
-            ApiVersion = _options.ApiVersion,
-            MachineIdentifier = _options.MachineIdentifier,
-            Version = _options.Version,
-            FriendlyName = _options.Name
+            ApiVersion = options.ApiVersion,
+            MachineIdentifier = options.MachineIdentifier,
+            Version = options.Version,
+            FriendlyName = options.Name
         });
         result.Providers.Add(provider);
 
@@ -128,15 +128,15 @@ public sealed class MediaController : ControllerBase
         var result = ServerInfo.Build(new XmlMediaProviderContainer
         {
             Size = 0,
-            ApiVersion = _options.ApiVersion,
-            MachineIdentifier = _options.MachineIdentifier,
-            Version = _options.Version,
-            FriendlyName = _options.Name
+            ApiVersion = options.ApiVersion,
+            MachineIdentifier = options.MachineIdentifier,
+            Version = options.Version,
+            FriendlyName = options.Name
         });
         return PlexResults.Container(this, result);
     }
 
-    private static string PlexTypeId(LibraryType type) => type == LibraryType.Movie ? "1" : "2";
+    private static string plexTypeId(LibraryType type) => type == LibraryType.Movie ? "1" : "2";
 
     internal static string PlexType(LibraryType type) => type == LibraryType.Movie ? "movie" : "show";
 }

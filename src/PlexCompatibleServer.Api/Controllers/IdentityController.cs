@@ -7,17 +7,17 @@ namespace PlexCompatibleServer.Api.Controllers;
 [ApiController]
 public sealed class IdentityController : ControllerBase
 {
-    private readonly ServerOptions _options;
-    public IdentityController(ServerOptions options) => _options = options;
+    private readonly ServerOptions options;
+    public IdentityController(ServerOptions options) => this.options = options;
 
     [HttpGet("/identity")]
     [Produces("application/xml", "application/json")]
     public IActionResult Get() => PlexResults.Container(this, new XmlIdentity
     {
         Size = 0,
-        ApiVersion = _options.ApiVersion,
+        ApiVersion = options.ApiVersion,
         Claimed = "0",
-        MachineIdentifier = _options.MachineIdentifier,
-        Version = _options.Version
+        MachineIdentifier = options.MachineIdentifier,
+        Version = options.Version
     });
 }

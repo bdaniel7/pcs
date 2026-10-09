@@ -16,18 +16,18 @@ namespace PlexCompatibleServer.Api.Controllers;
 [ApiController]
 public sealed class PlayQueueController : ControllerBase
 {
-    private readonly IPlaybackService _playback;
-    private readonly PlaybackState _state;
-    private readonly StreamSelectionStore _selections;
-    private readonly IMetadataService _metadata;
+    private readonly IPlaybackService playback;
+    private readonly PlaybackState state;
+    private readonly StreamSelectionStore selections;
+    private readonly IMetadataService metadata;
 
     public PlayQueueController(IPlaybackService playback, PlaybackState state, StreamSelectionStore selections,
                                IMetadataService metadata)
     {
-        _playback = playback;
-        _state = state;
-        _selections = selections;
-        _metadata = metadata;
+        this.playback = playback;
+        this.state = state;
+        this.selections = selections;
+        this.metadata = metadata;
     }
 
     [HttpPost("/playQueues")]
@@ -37,12 +37,12 @@ public sealed class PlayQueueController : ControllerBase
         if (!VideoController.TryResolvePath(uri, out var ratingKey))
             return PlexResults.Error(this, HttpStatusCode.BadRequest, "invalid uri");
 
-        var item = await _playback.GetMediaAsync(ratingKey, ct);
+        var item = await playback.GetMediaAsync(ratingKey, ct);
         if (item is null)
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
 
-        var queue = _state.Create(item.Id, uri!, item.Title);
-        return PlexResults.Container(this, ContainerFor(queue, item, 0));
+        var queue = state.Create(item.Id, uri!, item.Title);
+        return PlexResults.Container(this, containerFor(queue, item, 0));
     }
 
     /// <summary>
@@ -52,33 +52,33 @@ public sealed class PlayQueueController : ControllerBase
     [HttpGet("/playQueues/{id:int}")]
     public async Task<IActionResult> Get(int id, [FromQuery] string? offset, CancellationToken ct)
     {
-        var queue = _state.Get(id);
+        var queue = state.Get(id);
         if (queue is null)
             return PlexResults.Error(this, HttpStatusCode.NotFound, "play queue not found");
 
-        var reported = ParseOffset(offset);
+        var reported = parseOffset(offset);
         if (reported is { } milliseconds)
         {
-            _state.SetOffset(id, milliseconds);
+            state.SetOffset(id, milliseconds);
             queue.SelectedOffset = milliseconds;
         }
 
-        var item = await _playback.GetMediaAsync(queue.SelectedRatingKey, ct);
+        var item = await playback.GetMediaAsync(queue.SelectedRatingKey, ct);
         if (item is null)
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
 
-        return PlexResults.Container(this, ContainerFor(queue, item, queue.SelectedOffset));
+        return PlexResults.Container(this, containerFor(queue, item, queue.SelectedOffset));
     }
 
     [HttpGet("/playQueues")]
     public IActionResult GetAll() => PlexResults.Empty(this);
 
-    private XmlMediaContainer ContainerFor(PlaybackState.PlayQueue queue, MediaItem item, long offset)
+    private XmlMediaContainer containerFor(PlaybackState.PlayQueue queue, MediaItem item, long offset)
     {
         var entry = queue.Items.FirstOrDefault(x => x.Id == queue.SelectedItemId);
         if (entry is null) return new XmlMediaContainer();
-        var video = VideoMapper.ToVideoEnriched(_metadata, item, includeLibrarySection: true, selections: _selections);
-        video.PlayQueueItemID = entry.Id.ToString();
+        var video = VideoMapper.ToVideoEnriched(metadata, item, includeLibrarySection: true, selections: selections);
+        video.PlayQueueItemId = entry.Id.ToString();
 
         // The queue response is a summary: Media carries the part-less descriptor the client
         // uses to pick a source, without the per-stream detail the decision endpoint adds.
@@ -87,7 +87,7 @@ public sealed class PlayQueueController : ControllerBase
             media.Parts.Clear();
             media.Streams.Clear();
             media.OptimizedForStreaming = "1";
-            media.Has64bitOffsets = "0";
+            media.Has64BitOffsets = "0";
             media.PartCount = 1;
         }
 
@@ -97,12 +97,12 @@ public sealed class PlayQueueController : ControllerBase
             Identifier = "com.plexapp.plugins.library",
             MediaTagPrefix = "/system/bundle/media/flags/",
             MediaTagVersion = PlaybackState.MediaTagVersion,
-            PlayQueueID = queue.Id.ToString(),
-            PlayQueueSelectedItemID = entry.Id.ToString(),
+            PlayQueueId = queue.Id.ToString(),
+            PlayQueueSelectedItemId = entry.Id.ToString(),
             PlayQueueSelectedItemOffset = offset,
-            PlayQueueSelectedMetadataItemID = queue.SelectedRatingKey.ToString(),
+            PlayQueueSelectedMetadataItemId = queue.SelectedRatingKey.ToString(),
             PlayQueueShuffled = "0",
-            PlayQueueSourceURI = queue.SourceUri,
+            PlayQueueSourceUri = queue.SourceUri,
             PlayQueueSourceTitle = string.IsNullOrEmpty(queue.SourceTitle) ? "Unknown" : queue.SourceTitle,
             PlayQueueTotalCount = queue.Items.Count,
             PlayQueueVersion = queue.Version,
@@ -110,7 +110,7 @@ public sealed class PlayQueueController : ControllerBase
         };
     }
 
-    private static long? ParseOffset(string? offset)
+    private static long? parseOffset(string? offset)
     {
         if (string.IsNullOrWhiteSpace(offset)) return null;
         return long.TryParse(offset, out var value) && value >= 0 ? value : null;

@@ -10,16 +10,16 @@ namespace PlexCompatibleServer.Api.Controllers;
 [ApiController]
 public sealed class VideoController : ControllerBase
 {
-    private readonly IPlaybackService _playback;
-    private readonly StreamSelectionStore _selections;
+    private readonly IPlaybackService playback;
+    private readonly StreamSelectionStore selections;
 
     public VideoController(IPlaybackService playback, StreamSelectionStore selections)
     {
-        _playback = playback;
-        _selections = selections;
+        this.playback = playback;
+        this.selections = selections;
     }
 
-    internal const string MediaTagPrefix = "/system/bundle/media/flags/";
+    internal const string MEDIA_TAG_PREFIX = "/system/bundle/media/flags/";
 
     /// <summary>
     /// Plex addresses the file itself by a Part key of the form
@@ -27,7 +27,7 @@ public sealed class VideoController : ControllerBase
     /// &lt;video src&gt; for direct play, so it has to serve bytes with range support.
     /// </summary>
     [HttpGet("/library/parts/{id:int}/{timestamp}/{file}")]
-    public Task<IActionResult> Part(int id, string timestamp, string file, CancellationToken ct) => File(id, ct);
+    public Task<IActionResult> Part(int id, string timestamp, string file, CancellationToken ct) => this.file(id, ct);
 
     /// <summary>
     /// Several players (the LG TV app among them) probe a media URL with HEAD before committing to a
@@ -35,18 +35,18 @@ public sealed class VideoController : ControllerBase
     /// GET minus the body keeps that probe from failing.
     /// </summary>
     [HttpHead("/library/parts/{id:int}/{timestamp}/{file}")]
-    public Task<IActionResult> PartHead(int id, string timestamp, string file, CancellationToken ct) => File(id, ct);
+    public Task<IActionResult> PartHead(int id, string timestamp, string file, CancellationToken ct) => this.file(id, ct);
 
     /// <summary>Legacy direct-stream path kept for older clients.</summary>
     [HttpGet("/library/metadata/{id:int}/media/{partId:int}")]
-    public Task<IActionResult> Stream(int id, int partId, CancellationToken ct) => File(id, ct);
+    public Task<IActionResult> Stream(int id, int partId, CancellationToken ct) => file(id, ct);
 
     [HttpHead("/library/metadata/{id:int}/media/{partId:int}")]
-    public Task<IActionResult> StreamHead(int id, int partId, CancellationToken ct) => File(id, ct);
+    public Task<IActionResult> StreamHead(int id, int partId, CancellationToken ct) => file(id, ct);
 
-    private async Task<IActionResult> File(int id, CancellationToken ct)
+    private async Task<IActionResult> file(int id, CancellationToken ct)
     {
-        var item = await _playback.GetMediaAsync(id, ct);
+        var item = await playback.GetMediaAsync(id, ct);
         if (item is null || !System.IO.File.Exists(item.FilePath))
             return NotFound();
 
@@ -92,11 +92,11 @@ public sealed class VideoController : ControllerBase
         int? subtitleStreamId = null,
         CancellationToken ct = default)
     {
-        var item = await _playback.GetMediaAsync(partId, ct);
+        var item = await playback.GetMediaAsync(partId, ct);
         if (item is null)
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
 
-        var streams = VideoMapper.ToVideo(item, selections: _selections)
+        var streams = VideoMapper.ToVideo(item, selections: selections)
             .Media[0].Parts[0].Streams;
 
         // 0 is the documented way of saying "no subtitle" and always passes; anything else has to
@@ -109,7 +109,7 @@ public sealed class VideoController : ControllerBase
             !streams.Any(s => s.StreamType == 3 && s.Id == subtitleStreamId.ToString()))
             return PlexResults.Error(this, HttpStatusCode.BadRequest, "subtitle stream not found");
 
-        _selections.Set(partId, audioStreamId, subtitleStreamId);
+        selections.Set(partId, audioStreamId, subtitleStreamId);
         return PlexResults.Empty(this);
     }
 
@@ -129,22 +129,22 @@ public sealed class VideoController : ControllerBase
         if (!TryResolvePath(path, out var ratingKey))
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
 
-        var item = await _playback.GetMediaAsync(ratingKey, ct);
+        var item = await playback.GetMediaAsync(ratingKey, ct);
         if (item is null)
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
 
-        var video = VideoMapper.ToVideo(item, selections: _selections);
+        var video = VideoMapper.ToVideo(item, selections: selections);
         foreach (var media in video.Media)
         {
             media.Selected = "1";
-            media.Has64bitOffsets = "0";
+            media.Has64BitOffsets = "0";
             media.OptimizedForStreaming = "1";
 
             foreach (var part in media.Parts)
             {
                 part.Decision = "directplay";
                 part.Selected = "1";
-                part.Has64bitOffsets = "0";
+                part.Has64BitOffsets = "0";
                 part.OptimizedForStreaming = "1";
 
                 // The decision echoes back the session the client just asked for: a track it
@@ -164,14 +164,14 @@ public sealed class VideoController : ControllerBase
             Size = 1,
             AllowSync = "1",
             Identifier = "com.plexapp.plugins.library",
-            LibrarySectionID = item.LibraryId.ToString(),
+            LibrarySectionId = item.LibraryId.ToString(),
             LibrarySectionTitle = item.Library.Name,
-            LibrarySectionUUID = item.Library.Uuid,
+            LibrarySectionUuid = item.Library.Uuid,
             MdeDecisionCode = "1000",
             MdeDecisionText = "Direct play OK.",
-            MediaTagPrefix = MediaTagPrefix,
+            MediaTagPrefix = MEDIA_TAG_PREFIX,
             MediaTagVersion = PlaybackState.MediaTagVersion,
-            ResourceSession = ResourceSessionFor,
+            ResourceSession = resourceSessionFor,
             Videos = { video }
         };
 
@@ -192,14 +192,14 @@ public sealed class VideoController : ControllerBase
         if (!TryResolvePath(path, out var ratingKey))
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
 
-        var item = await _playback.GetMediaAsync(ratingKey, ct);
+        var item = await playback.GetMediaAsync(ratingKey, ct);
         if (item is null)
             return PlexResults.Error(this, HttpStatusCode.NotFound, "media not found");
 
-        var selectedSubtitle = _selections.Get(ratingKey).Subtitle;
-        if (selectedSubtitle <= 0) return EmptySubtitle();
+        var selectedSubtitle = selections.Get(ratingKey).Subtitle;
+        if (selectedSubtitle <= 0) return emptySubtitle();
 
-        return await GetSubtitle(selectedSubtitle, ratingKey, ct);
+        return await getSubtitle(selectedSubtitle, ratingKey, ct);
     }
 
     /// <summary>
@@ -219,27 +219,27 @@ public sealed class VideoController : ControllerBase
     [HttpGet("/library/streams/{id:int}")]
     public Task<IActionResult> StreamFile(int id, CancellationToken ct)
     {
-        return GetSubtitle(id, 0, ct);
+        return getSubtitle(id, 0, ct);
     }
 
     [HttpGet("/library/parts/{partId:int}/subtitles/{streamId:int}")]
     [HttpGet("/library/parts/{partId:int}/subtitles/{streamId:int}.srt")]
     public Task<IActionResult> StreamFileAlt(int partId, int streamId, CancellationToken ct)
     {
-        return GetSubtitle(streamId, partId, ct);
+        return getSubtitle(streamId, partId, ct);
     }
 
-    private async Task<IActionResult> GetSubtitle(int streamId, int partId, CancellationToken ct)
+    private async Task<IActionResult> getSubtitle(int streamId, int partId, CancellationToken ct)
     {
         // The part id is the item id, so it is the most trustworthy handle on the request. A
         // stream id only carries one when it was minted by this server as itemId * 1000 + index.
         MediaItem? media = null;
-        if (partId > 0) media = await _playback.GetMediaAsync(partId, ct);
-        if (media is null && streamId >= 1000) media = await _playback.GetMediaAsync(streamId / 1000, ct);
-        if (media is null) media = await _playback.GetMediaAsync(streamId, ct);
+        if (partId > 0) media = await playback.GetMediaAsync(partId, ct);
+        if (media is null && streamId >= 1000) media = await playback.GetMediaAsync(streamId / 1000, ct);
+        if (media is null) media = await playback.GetMediaAsync(streamId, ct);
         if (media is null || !System.IO.File.Exists(media.FilePath)) return NotFound();
 
-        var probed = ProbedStreams(media);
+        var probed = probedStreams(media);
         var sidecars = SidecarSubtitles.Find(media.FilePath);
 
         // Sidecar tracks are published after every probed track, so a stream id that decodes
@@ -248,7 +248,7 @@ public sealed class VideoController : ControllerBase
         var index = streamId % 1000;
         var sidecarIndex = index - probed.Count;
         if (sidecarIndex >= 0 && sidecarIndex < sidecars.Count)
-            return ServeSubtitle(sidecars[sidecarIndex].FilePath);
+            return serveSubtitle(sidecars[sidecarIndex].FilePath);
 
         // The request addresses a track that lives inside the container. Its text is pulled out
         // to SRT first, because a direct-playing client cannot read a subtitle track out of the
@@ -262,27 +262,27 @@ public sealed class VideoController : ControllerBase
                 if (probed[i].StreamType == 3) position++;
 
             var extracted = await EmbeddedSubtitles.ExtractAsync(media.FilePath, position, track.Codec, ct);
-            return extracted is null ? EmptySubtitle() : ServeSubtitle(extracted);
+            return extracted is null ? emptySubtitle() : serveSubtitle(extracted);
         }
 
         // An id that does not decode to a sidecar slot still came from a client asking for a
         // subtitle, so fall back to the first one rather than failing the playback.
         if (sidecars.Count > 0)
-            return ServeSubtitle(sidecars[0].FilePath);
+            return serveSubtitle(sidecars[0].FilePath);
 
-        return index <= probed.Count ? EmptySubtitle() : NotFound();
+        return index <= probed.Count ? emptySubtitle() : NotFound();
     }
 
-    private IActionResult ServeSubtitle(string path)
+    private IActionResult serveSubtitle(string path)
     {
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 65536, options: FileOptions.Asynchronous);
         return File(stream, "text/plain", enableRangeProcessing: false);
     }
 
-    private IActionResult EmptySubtitle() => Content("", "text/plain");
+    private IActionResult emptySubtitle() => Content("", "text/plain");
 
-    private static List<MediaStreamInfo> ProbedStreams(MediaItem media)
+    private static List<MediaStreamInfo> probedStreams(MediaItem media)
     {
         if (string.IsNullOrWhiteSpace(media.StreamsJson)) return [];
 
@@ -296,7 +296,7 @@ public sealed class VideoController : ControllerBase
         }
     }
 
-    private string ResourceSessionFor =>
+    private string resourceSessionFor =>
         Request.Query["session"].FirstOrDefault()
         ?? Request.Headers["X-Plex-Session-Identifier"].FirstOrDefault()
         ?? "pcs-playback";

@@ -24,15 +24,15 @@ internal sealed class ParsedEpisodeName
 /// </summary>
 internal static class TvEpisodeName
 {
-    private static readonly Regex SeasonEpisodePattern = new(
+    private static readonly Regex seasonEpisodePattern = new(
         @"(?<![A-Za-z0-9])S(\d{1,2})[\s._-]*E(\d{1,3})(?:[\s._-]*E\d{1,3})*",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly Regex NxPattern = new(
+    private static readonly Regex nxPattern = new(
         @"(?<![A-Za-z0-9])(\d{1,2})x(\d{2,3})(?!\d)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly string[] Extensions = MediaTokens.FilenameExtensions;
+    private static readonly string[] extensions = MediaTokens.FilenameExtensions;
 
     public static ParsedEpisodeName? Parse(string filePath)
     {
@@ -42,7 +42,7 @@ internal static class TvEpisodeName
         {
             var lower = file.ToLowerInvariant();
             var stripped = false;
-            foreach (var e in Extensions)
+            foreach (var e in extensions)
             {
                 if (lower.EndsWith(e))
                 {
@@ -54,8 +54,8 @@ internal static class TvEpisodeName
             if (!stripped) break;
         }
 
-        var match = SeasonEpisodePattern.Match(file);
-        if (!match.Success) match = NxPattern.Match(file);
+        var match = seasonEpisodePattern.Match(file);
+        if (!match.Success) match = nxPattern.Match(file);
         if (!match.Success) return null;
 
         var showPart = file[..match.Index].TrimEnd(' ', '.', '_', '-');
@@ -70,7 +70,7 @@ internal static class TvEpisodeName
             ShowName = showPart,
             Season = int.Parse(match.Groups[1].Value),
             Episode = int.Parse(match.Groups[2].Value),
-            EpisodeTitle = CleanEpisodeTitle(rest),
+            EpisodeTitle = cleanEpisodeTitle(rest),
         };
     }
 
@@ -79,19 +79,19 @@ internal static class TvEpisodeName
     /// deliberately strict (resolutions, codecs, containers) so an episode legitimately titled
     /// "A Web of Lies" survives while "Daddy Issues 1080p ATVP WEB-DL ..." yields "Daddy Issues".
     /// </summary>
-    private static string CleanEpisodeTitle(string rest)
+    private static string cleanEpisodeTitle(string rest)
     {
         var keep = new List<string>();
         foreach (var token in Regex.Split(rest, "[^A-Za-z0-9]+"))
         {
             if (token.Length == 0) continue;
             if (MediaTokens.IsReleaseToken(token)) break;
-            if (keep.Count > 0 && IsYearToken(token)) break;
+            if (keep.Count > 0 && isYearToken(token)) break;
             keep.Add(token);
         }
         return string.Join(' ', keep);
     }
 
-    private static bool IsYearToken(string t) =>
+    private static bool isYearToken(string t) =>
         t.Length == 4 && int.TryParse(t, out var y) && y >= 1900 && y <= 2100;
 }

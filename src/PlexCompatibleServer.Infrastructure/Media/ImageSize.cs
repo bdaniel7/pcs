@@ -33,7 +33,7 @@ internal static class ImageSize
             }
 
             if (bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
-                return TryJpeg(bytes, out width, out height);
+                return tryJpeg(bytes, out width, out height);
 
             return false;
         }
@@ -44,7 +44,7 @@ internal static class ImageSize
         }
     }
 
-    private static bool TryJpeg(byte[] bytes, out int width, out int height)
+    private static bool tryJpeg(byte[] bytes, out int width, out int height)
     {
         width = 0;
         height = 0;

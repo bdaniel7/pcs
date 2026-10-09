@@ -22,11 +22,11 @@ public sealed class PlaybackState
     /// accumulating them. The cap keeps memory bounded: once exceeded, the oldest queues (lowest id,
     /// which are also the least recently created) are dropped. No client holds a queue that old.
     /// </summary>
-    internal const int MaxQueues = 256;
+    internal const int MAX_QUEUES = 256;
 
-    private readonly ConcurrentDictionary<int, PlayQueue> _queues = new();
-    private int _nextQueueId;
-    private int _nextItemId;
+    private readonly ConcurrentDictionary<int, PlayQueue> queues = new();
+    private int nextQueueId;
+    private int nextItemId;
 
     /// <summary>
     /// Creates a single-item queue for the given rating key. Repeated creation for the same source is
@@ -34,8 +34,8 @@ public sealed class PlaybackState
     /// </summary>
     public PlayQueue Create(int ratingKey, string sourceUri, string sourceTitle)
     {
-        var queueId = Interlocked.Increment(ref _nextQueueId);
-        var itemId = Interlocked.Increment(ref _nextItemId);
+        var queueId = Interlocked.Increment(ref nextQueueId);
+        var itemId = Interlocked.Increment(ref nextItemId);
 
         var queue = new PlayQueue
         {
@@ -48,31 +48,31 @@ public sealed class PlaybackState
             SelectedRatingKey = ratingKey
         };
 
-        _queues[queueId] = queue;
-        Trim();
+        queues[queueId] = queue;
+        trim();
         return queue;
     }
 
     /// <summary>
-    /// Drops the oldest queues once the store grows past <see cref="MaxQueues"/>. Ids are monotonic,
+    /// Drops the oldest queues once the store grows past <see cref="MAX_QUEUES"/>. Ids are monotonic,
     /// so the lowest ids are the oldest and the safest to forget.
     /// </summary>
-    private void Trim()
+    private void trim()
     {
-        var excess = _queues.Count - MaxQueues;
+        var excess = queues.Count - MAX_QUEUES;
         if (excess <= 0) return;
 
-        foreach (var stale in _queues.Keys.OrderBy(static id => id).Take(excess))
+        foreach (var stale in queues.Keys.OrderBy(static id => id).Take(excess))
         {
-            _queues.TryRemove(stale, out _);
+            queues.TryRemove(stale, out _);
         }
     }
 
-    public PlayQueue? Get(int id) => _queues.TryGetValue(id, out var queue) ? queue : null;
+    public PlayQueue? Get(int id) => queues.TryGetValue(id, out var queue) ? queue : null;
 
     public bool SetOffset(int id, long offset)
     {
-        if (!_queues.TryGetValue(id, out var queue)) return false;
+        if (!queues.TryGetValue(id, out var queue)) return false;
         queue.SelectedOffset = Math.Max(0, offset);
         queue.Version++;
         return true;

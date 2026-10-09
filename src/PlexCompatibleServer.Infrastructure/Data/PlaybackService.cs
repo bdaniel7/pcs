@@ -5,10 +5,10 @@ namespace PlexCompatibleServer.Infrastructure.Data;
 
 public sealed class PlaybackService : IPlaybackService
 {
-    private readonly IMediaRepository _repository;
+    private readonly IMediaRepository repository;
 
-    public PlaybackService(IMediaRepository repository) => _repository = repository;
+    public PlaybackService(IMediaRepository repository) => this.repository = repository;
 
     public Task<MediaItem?> GetMediaAsync(int id, CancellationToken ct) =>
-        _repository.GetItemAsync(id, ct);
+        repository.GetItemAsync(id, ct);
 }

@@ -8,23 +8,23 @@ namespace PlexCompatibleServer.Api.Controllers;
 [ApiController]
 public sealed class ServerController : ControllerBase
 {
-    private readonly ServerOptions _options;
-    private readonly IMediaRepository _repo;
+    private readonly ServerOptions options;
+    private readonly IMediaRepository repo;
 
     public ServerController(ServerOptions options, IMediaRepository repo)
     {
-        _options = options;
-        _repo = repo;
+        this.options = options;
+        this.repo = repo;
     }
 
     [HttpGet("/")]
     [Produces("application/xml", "application/json")]
     public async Task<IActionResult> Root(CancellationToken ct)
     {
-        var libraries = await _repo.GetLibrariesAsync(ct);
+        var libraries = await repo.GetLibrariesAsync(ct);
 
         var directories = new List<XmlRootDirectory>();
-        foreach (var key in DiscoveryKeys)
+        foreach (var key in discoveryKeys)
         {
             directories.Add(new XmlRootDirectory
             {
@@ -37,17 +37,17 @@ public sealed class ServerController : ControllerBase
         return PlexResults.Container(this, ServerInfo.Build(new XmlServerInfo
         {
             Size = directories.Count,
-            ApiVersion = _options.ApiVersion,
-            FriendlyName = _options.Name,
-            MachineIdentifier = _options.MachineIdentifier,
+            ApiVersion = options.ApiVersion,
+            FriendlyName = options.Name,
+            MachineIdentifier = options.MachineIdentifier,
             MyPlexMappingState = "unknown",
             MyPlexSigninState = "none",
-            Version = _options.Version,
+            Version = options.Version,
             Directories = directories
         }));
     }
 
-    private static readonly string[] DiscoveryKeys =
+    private static readonly string[] discoveryKeys =
     [
         "actions", "activities", "butler", "channels", "clients", "devices", "diagnostics",
         "downloadQueue", "hubs", "library", "livetv", "media", "neighborhood", "playQueues",

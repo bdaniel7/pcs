@@ -12,31 +12,31 @@ namespace PlexCompatibleServer.Api.Controllers;
 /// </summary>
 internal sealed class PlexTvClient
 {
-    private const string DiscoverBase = "https://discover.provider.plex.tv";
+    private const string DISCOVER_BASE = "https://discover.provider.plex.tv";
 
-    private const string SearchUrlFormat =
+    private const string SEARCH_URL_FORMAT =
         "https://discover.provider.plex.tv/library/search?query={0}&type=1&limit=10&searchProviders=discover&searchTypes=movies";
 
     // Show search: searchTypes=tv is the only variant plex.tv accepts (shows/show and a missing
     // type all answer 400), and its results nest exactly like the movie search one.
-    private const string TvSearchUrlFormat =
+    private const string TV_SEARCH_URL_FORMAT =
         "https://discover.provider.plex.tv/library/search?query={0}&type=2&limit=10&searchProviders=discover&searchTypes=tv";
 
-    private const string DetailUrlFormat = "https://discover.provider.plex.tv/library/metadata/{0}";
-    private const string ChildrenUrlFormat = "https://discover.provider.plex.tv/library/metadata/{0}/children";
+    private const string DETAIL_URL_FORMAT = "https://discover.provider.plex.tv/library/metadata/{0}";
+    private const string CHILDREN_URL_FORMAT = "https://discover.provider.plex.tv/library/metadata/{0}/children";
 
     // A single shared client is safe: HttpClient is immutable after construction. The DI path
     // supplies the app's configured client; tests fall back to this default.
-    private static readonly HttpClient DefaultHttp = new() { Timeout = TimeSpan.FromSeconds(5) };
+    private static readonly HttpClient defaultHttp = new() { Timeout = TimeSpan.FromSeconds(5) };
 
-    private readonly SidecarStore _store;
-    private readonly HttpClient _http;
-    private string? _plexToken;
+    private readonly SidecarStore store;
+    private readonly HttpClient http;
+    private string? plexToken;
 
     internal PlexTvClient(SidecarStore store, HttpClient? http = null)
     {
-        _store = store;
-        _http = http ?? DefaultHttp;
+        this.store = store;
+        this.http = http ?? defaultHttp;
     }
 
     /// <summary>
@@ -45,10 +45,10 @@ internal sealed class PlexTvClient
     /// </summary>
     internal void CaptureToken(string? token)
     {
-        if (!string.IsNullOrEmpty(token)) _plexToken = token;
+        if (!string.IsNullOrEmpty(token)) plexToken = token;
     }
 
-    internal bool TokenKnown => _plexToken is not null;
+    internal bool TokenKnown => plexToken is not null;
 
     /// <summary>
     /// Resolves an item's real plex.tv guid (and, when the client's token is known, full metadata)
@@ -66,7 +66,7 @@ internal sealed class PlexTvClient
 
             if (rec is null) return null;
             var key = MetadataMatcher.GetKey(item);
-            if (!string.IsNullOrEmpty(key)) _store.PersistLookup(key, rec);
+            if (!string.IsNullOrEmpty(key)) store.PersistLookup(key, rec);
 
             return rec;
         }
@@ -89,7 +89,7 @@ internal sealed class PlexTvClient
 
         try
         {
-            var detailJson = await FetchAsync(string.Format(DetailUrlFormat, rec.RatingKey), true, ct)
+            var detailJson = await fetchAsync(string.Format(DETAIL_URL_FORMAT, rec.RatingKey), true, ct)
                 .ConfigureAwait(false);
 
             if (detailJson is null) return false;
@@ -117,7 +117,7 @@ internal sealed class PlexTvClient
 
         if (string.IsNullOrWhiteSpace(title)) return null;
 
-        var searchJson = await FetchAsync(string.Format(SearchUrlFormat, Uri.EscapeDataString(title)), false, ct)
+        var searchJson = await fetchAsync(string.Format(SEARCH_URL_FORMAT, Uri.EscapeDataString(title)), false, ct)
             .ConfigureAwait(false);
 
         if (searchJson is null) return null;
@@ -126,13 +126,13 @@ internal sealed class PlexTvClient
 
         if (rec?.Guid is null) return null;
 
-        if (!string.IsNullOrEmpty(rec.RatingKey) && _plexToken is not null)
+        if (!string.IsNullOrEmpty(rec.RatingKey) && plexToken is not null)
         {
             rec.DetailChecked = true;
 
             try
             {
-                var detailJson = await FetchAsync(string.Format(DetailUrlFormat, rec.RatingKey), true, ct)
+                var detailJson = await fetchAsync(string.Format(DETAIL_URL_FORMAT, rec.RatingKey), true, ct)
                     .ConfigureAwait(false);
                 if (detailJson is not null) EnrichFromDetail(rec, detailJson);
             }
@@ -168,16 +168,16 @@ internal sealed class PlexTvClient
         var showNameHasYear = MetadataMatcher.ContainsYearToken(parsed.ShowName);
         var bindingKey = MetadataMatcher.ShowBindingKey(parsed.ShowName);
 
-        if (!showNameHasYear && _store.GetShowBinding(bindingKey) is { RatingKey: { Length: > 0 } } bound)
+        if (!showNameHasYear && store.GetShowBinding(bindingKey) is { RatingKey: { Length: > 0 } } bound)
         {
-            var viaBinding = await WalkEpisodeShowAsync(parsed, bound, ct).ConfigureAwait(false);
+            var viaBinding = await walkEpisodeShowAsync(parsed, bound, ct).ConfigureAwait(false);
 
             if (viaBinding is not null) return viaBinding;
 
             // A binding whose show no longer has the season is stale: fall through to a fresh search.
         }
 
-        var searchJson = await FetchAsync(string.Format(TvSearchUrlFormat, Uri.EscapeDataString(parsed.ShowName)), false, ct)
+        var searchJson = await fetchAsync(string.Format(TV_SEARCH_URL_FORMAT, Uri.EscapeDataString(parsed.ShowName)), false, ct)
             .ConfigureAwait(false);
 
         if (searchJson is null) return null;
@@ -202,7 +202,7 @@ internal sealed class PlexTvClient
         {
             var byTitle = await VerifyByEpisodeTitleAsync(
                                                           GetShowCandidates(searchJson, parsed.ShowName), parsed,
-                                                          (url, token) => FetchAsync(url, true, token), ct)
+                                                          (url, token) => fetchAsync(url, true, token), ct)
                 .ConfigureAwait(false);
 
             if (byTitle?.RatingKey is not null)
@@ -212,17 +212,17 @@ internal sealed class PlexTvClient
             }
         }
 
-        if (confident) _store.SaveShowBinding(bindingKey, show);
+        if (confident) store.SaveShowBinding(bindingKey, show);
 
-        return await WalkEpisodeShowAsync(parsed, show, ct).ConfigureAwait(false);
+        return await walkEpisodeShowAsync(parsed, show, ct).ConfigureAwait(false);
     }
 
     /// <summary>Show -> season -> episode walk that turns a show pick into the episode record.</summary>
-    private async Task<SidecarItem?> WalkEpisodeShowAsync(ParsedEpisodeName parsed,
+    private async Task<SidecarItem?> walkEpisodeShowAsync(ParsedEpisodeName parsed,
                                                           SidecarItem show,
                                                           CancellationToken ct)
     {
-        var seasonsJson = await FetchAsync(string.Format(ChildrenUrlFormat, show.RatingKey), true, ct)
+        var seasonsJson = await fetchAsync(string.Format(CHILDREN_URL_FORMAT, show.RatingKey), true, ct)
             .ConfigureAwait(false);
 
         if (seasonsJson is null) return null;
@@ -230,14 +230,14 @@ internal sealed class PlexTvClient
 
         if (seasonKey is null) return null;
 
-        var episodesJson = await FetchAsync(DiscoverBase + seasonKey, true, ct).ConfigureAwait(false);
+        var episodesJson = await fetchAsync(DISCOVER_BASE + seasonKey, true, ct).ConfigureAwait(false);
 
         if (episodesJson is null) return null;
         var rec = PickEpisodeRecord(episodesJson, parsed.Episode, parsed);
 
         if (rec is null) return null;
 
-        var showJson = await FetchAsync(string.Format(DetailUrlFormat, show.RatingKey), false, ct)
+        var showJson = await fetchAsync(string.Format(DETAIL_URL_FORMAT, show.RatingKey), false, ct)
             .ConfigureAwait(false);
         if (showJson is not null) MergeShowDetail(rec, showJson);
 
@@ -260,7 +260,7 @@ internal sealed class PlexTvClient
         if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return null;
         if (!mc.TryGetProperty("SearchResults", out var results)) return null;
 
-        var candidates = FlattenCandidates(results, "show");
+        var candidates = flattenCandidates(results, "show");
 
         if (candidates.Count == 0) return null;
 
@@ -270,8 +270,8 @@ internal sealed class PlexTvClient
 
         foreach (var (md, _) in candidates)
         {
-            var t = GetString(md, "title");
-            var slug = GetString(md, "slug");
+            var t = getString(md, "title");
+            var slug = getString(md, "slug");
             var tNorm = t is null ? null : MetadataMatcher.NormalizeTitle(t);
             var slugNorm = slug is null ? null : MetadataMatcher.NormalizeTitle(slug);
 
@@ -295,9 +295,9 @@ internal sealed class PlexTvClient
 
         var rec = new SidecarItem
         {
-            Guid = GetString(best, "guid"),
-            Title = GetString(best, "title"),
-            RatingKey = GetString(best, "ratingKey")
+            Guid = getString(best, "guid"),
+            Title = getString(best, "title"),
+            RatingKey = getString(best, "ratingKey")
         };
 
         return rec.Guid is null ? null : rec;
@@ -322,13 +322,13 @@ internal sealed class PlexTvClient
         if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return list;
         if (!mc.TryGetProperty("SearchResults", out var results)) return list;
 
-        foreach (var (md, _) in FlattenCandidates(results, "show"))
+        foreach (var (md, _) in flattenCandidates(results, "show"))
         {
-            var guid = GetString(md, "guid");
+            var guid = getString(md, "guid");
 
             if (guid is null) continue;
-            var t = MetadataMatcher.NormalizeTitle(GetString(md, "title") ?? "");
-            var slug = MetadataMatcher.NormalizeTitle(GetString(md, "slug") ?? "");
+            var t = MetadataMatcher.NormalizeTitle(getString(md, "title") ?? "");
+            var slug = MetadataMatcher.NormalizeTitle(getString(md, "slug") ?? "");
 
             var matched =
                 (t.Length > 0 && (t == target || t.Contains(target) || target.Contains(t))) ||
@@ -339,8 +339,8 @@ internal sealed class PlexTvClient
                 list.Add(new SidecarItem
                 {
                     Guid = guid,
-                    Title = GetString(md, "title"),
-                    RatingKey = GetString(md, "ratingKey")
+                    Title = getString(md, "title"),
+                    RatingKey = getString(md, "ratingKey")
                 });
             }
         }
@@ -382,9 +382,9 @@ internal sealed class PlexTvClient
         if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return null;
         if (!mc.TryGetProperty("Metadata", out var arr)) return null;
 
-        foreach (var m in AsArray(arr))
-            if (GetInt(m, "index") == episode)
-                return GetString(m, "title");
+        foreach (var m in asArray(arr))
+            if (getInt(m, "index") == episode)
+                return getString(m, "title");
 
         return null;
     }
@@ -426,11 +426,11 @@ internal sealed class PlexTvClient
 
             try
             {
-                var seasonsJson = await fetch(string.Format(ChildrenUrlFormat, c.RatingKey), ct).ConfigureAwait(false);
+                var seasonsJson = await fetch(string.Format(CHILDREN_URL_FORMAT, c.RatingKey), ct).ConfigureAwait(false);
                 var seasonKey = seasonsJson is null ? null : PickSeasonKey(seasonsJson, parsed.Season);
                 var episodesJson = seasonKey is null
                                        ? null
-                                       : await fetch(DiscoverBase + seasonKey, ct).ConfigureAwait(false);
+                                       : await fetch(DISCOVER_BASE + seasonKey, ct).ConfigureAwait(false);
                 title = episodesJson is null ? null : PickEpisodeTitle(episodesJson, parsed.Episode);
             }
             catch
@@ -456,9 +456,9 @@ internal sealed class PlexTvClient
         if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return null;
         if (!mc.TryGetProperty("Metadata", out var arr)) return null;
 
-        foreach (var m in AsArray(arr))
-            if (GetInt(m, "index") == season)
-                return GetString(m, "key");
+        foreach (var m in asArray(arr))
+            if (getInt(m, "index") == season)
+                return getString(m, "key");
 
         return null;
     }
@@ -478,8 +478,8 @@ internal sealed class PlexTvClient
         if (!mc.TryGetProperty("Metadata", out var arr)) return null;
         JsonElement md = default;
 
-        foreach (var m in AsArray(arr))
-            if (GetInt(m, "index") == episodeNumber)
+        foreach (var m in asArray(arr))
+            if (getInt(m, "index") == episodeNumber)
             {
                 md = m;
 
@@ -488,44 +488,44 @@ internal sealed class PlexTvClient
 
         if (md.ValueKind == JsonValueKind.Undefined) return null;
 
-        var guid = GetString(md, "guid");
+        var guid = getString(md, "guid");
 
         if (string.IsNullOrEmpty(guid)) return null;
 
-        var title = GetString(md, "title");
+        var title = getString(md, "title");
         if (string.IsNullOrEmpty(title)) title = parsed.EpisodeTitle;
         if (string.IsNullOrEmpty(title)) title = $"Episode {episodeNumber}";
 
         var rec = new SidecarItem
         {
             Guid = guid,
-            RatingKey = GetString(md, "ratingKey"),
+            RatingKey = getString(md, "ratingKey"),
             Title = title,
             TitleSort = title,
-            Year = GetInt(md, "year")?.ToString(CultureInfo.InvariantCulture),
-            Summary = GetString(md, "summary"),
-            ContentRating = GetString(md, "contentRating"),
-            OriginallyAvailableAt = GetString(md, "originallyAvailableAt"),
-            AudienceRating = GetDouble(md, "audienceRating"),
-            Index = (GetInt(md, "index") ?? episodeNumber).ToString(CultureInfo.InvariantCulture),
-            ParentIndex = GetInt(md, "parentIndex")?.ToString(CultureInfo.InvariantCulture),
-            ParentTitle = GetString(md, "parentTitle"),
-            ParentKey = GetString(md, "parentKey"),
-            ParentRatingKey = GetString(md, "parentRatingKey"),
-            ParentGuid = GetString(md, "parentGuid"),
-            GrandparentTitle = GetString(md, "grandparentTitle"),
-            GrandparentKey = GetString(md, "grandparentKey"),
-            GrandparentRatingKey = GetString(md, "grandparentRatingKey"),
-            GrandparentGuid = GetString(md, "grandparentGuid"),
-            ParentThumbUrl = GetString(md, "parentThumb"),
-            GrandparentThumbUrl = GetString(md, "grandparentThumb")
+            Year = getInt(md, "year")?.ToString(CultureInfo.InvariantCulture),
+            Summary = getString(md, "summary"),
+            ContentRating = getString(md, "contentRating"),
+            OriginallyAvailableAt = getString(md, "originallyAvailableAt"),
+            AudienceRating = getDouble(md, "audienceRating"),
+            Index = (getInt(md, "index") ?? episodeNumber).ToString(CultureInfo.InvariantCulture),
+            ParentIndex = getInt(md, "parentIndex")?.ToString(CultureInfo.InvariantCulture),
+            ParentTitle = getString(md, "parentTitle"),
+            ParentKey = getString(md, "parentKey"),
+            ParentRatingKey = getString(md, "parentRatingKey"),
+            ParentGuid = getString(md, "parentGuid"),
+            GrandparentTitle = getString(md, "grandparentTitle"),
+            GrandparentKey = getString(md, "grandparentKey"),
+            GrandparentRatingKey = getString(md, "grandparentRatingKey"),
+            GrandparentGuid = getString(md, "grandparentGuid"),
+            ParentThumbUrl = getString(md, "parentThumb"),
+            GrandparentThumbUrl = getString(md, "grandparentThumb")
         };
-        if (md.TryGetProperty("Rating", out var ratings)) rec.Ratings = MapRatings(ratings);
-        if (md.TryGetProperty("Role", out var roles)) rec.Roles = MapPeople(roles);
-        if (md.TryGetProperty("Director", out var dirs)) rec.Directors = MapPeople(dirs);
-        if (md.TryGetProperty("Writer", out var ws)) rec.Writers = MapPeople(ws);
-        if (md.TryGetProperty("Producer", out var ps)) rec.Producers = MapPeople(ps);
-        if (md.TryGetProperty("Guid", out var gids)) rec.Guids = MapStrings(gids, "id");
+        if (md.TryGetProperty("Rating", out var ratings)) rec.Ratings = mapRatings(ratings);
+        if (md.TryGetProperty("Role", out var roles)) rec.Roles = mapPeople(roles);
+        if (md.TryGetProperty("Director", out var dirs)) rec.Directors = mapPeople(dirs);
+        if (md.TryGetProperty("Writer", out var ws)) rec.Writers = mapPeople(ws);
+        if (md.TryGetProperty("Producer", out var ps)) rec.Producers = mapPeople(ps);
+        if (md.TryGetProperty("Guid", out var gids)) rec.Guids = mapStrings(gids, "id");
 
         return rec;
     }
@@ -545,7 +545,7 @@ internal sealed class PlexTvClient
             if (!mc.TryGetProperty("Metadata", out var arr)) return;
             JsonElement md = default;
 
-            foreach (var m in AsArray(arr))
+            foreach (var m in asArray(arr))
             {
                 md = m;
 
@@ -554,15 +554,15 @@ internal sealed class PlexTvClient
 
             if (md.ValueKind == JsonValueKind.Undefined) return;
 
-            if (string.IsNullOrEmpty(rec.Studio)) rec.Studio = GetString(md, "studio");
-            rec.Genres ??= md.TryGetProperty("Genre", out var gs) ? MapStrings(gs, "tag") : null;
-            rec.Countries ??= md.TryGetProperty("Country", out var cs) ? MapStrings(cs, "tag") : null;
+            if (string.IsNullOrEmpty(rec.Studio)) rec.Studio = getString(md, "studio");
+            rec.Genres ??= md.TryGetProperty("Genre", out var gs) ? mapStrings(gs, "tag") : null;
+            rec.Countries ??= md.TryGetProperty("Country", out var cs) ? mapStrings(cs, "tag") : null;
 
             // The episode payload already carries grandparentThumb; the show detail is the fallback
             // when it did not.
             if (string.IsNullOrEmpty(rec.GrandparentThumbUrl))
             {
-                var showThumb = GetString(md, "thumb");
+                var showThumb = getString(md, "thumb");
                 if (!string.IsNullOrEmpty(showThumb)) rec.GrandparentThumbUrl = showThumb;
             }
         }
@@ -608,7 +608,7 @@ internal sealed class PlexTvClient
         var yearIdx = -1;
 
         for (var i = 1; i < tokens.Count; i++)
-            if (IsYearToken(tokens[i]))
+            if (isYearToken(tokens[i]))
             {
                 yearIdx = i;
 
@@ -635,7 +635,7 @@ internal sealed class PlexTvClient
         return string.Join(' ', tokens.GetRange(0, cut));
     }
 
-    private static bool IsYearToken(string t) =>
+    private static bool isYearToken(string t) =>
         t.Length == 4 && int.TryParse(t, out var y) && y >= 1900 && y <= 2100;
 
     /// <summary>
@@ -655,7 +655,7 @@ internal sealed class PlexTvClient
         if (!doc.RootElement.TryGetProperty("MediaContainer", out var mc)) return null;
         if (!mc.TryGetProperty("SearchResults", out var results)) return null;
 
-        var candidates = FlattenCandidates(results);
+        var candidates = flattenCandidates(results);
         var target = MetadataMatcher.NormalizeTitle(title);
         JsonElement best = default;
         var haveBest = false;
@@ -665,14 +665,14 @@ internal sealed class PlexTvClient
         {
             // Distributors rename films across regions - "And Life Goes On" is listed as
             // "Life, and Nothing More…" but keeps the slug and-life-goes-on. Match the slug too.
-            var t = GetString(md, "title");
-            var slug = GetString(md, "slug");
+            var t = getString(md, "title");
+            var slug = getString(md, "slug");
             var tNorm = t is null ? null : MetadataMatcher.NormalizeTitle(t);
             var slugNorm = slug is null ? null : MetadataMatcher.NormalizeTitle(slug);
 
             if (tNorm != target && slugNorm != target) continue;
 
-            var candYear = GetInt(md, "year");
+            var candYear = getInt(md, "year");
             var diff = (year is null || candYear is null) ? -1 : Math.Abs(candYear.Value - year.Value);
 
             if (diff > 1) continue;
@@ -696,7 +696,7 @@ internal sealed class PlexTvClient
         if (!haveBest && year is not null && candidates.Count > 0)
         {
             var (topMd, topScore) = candidates[0];
-            var topYear = GetInt(topMd, "year");
+            var topYear = getInt(topMd, "year");
 
             var clearlyFirst = topScore is >= 0.35 &&
                                (candidates.Count == 1 || topScore > candidates[1].Score);
@@ -712,14 +712,14 @@ internal sealed class PlexTvClient
 
         var rec = new SidecarItem
         {
-            Guid = GetString(best, "guid"),
-            Title = GetString(best, "title"),
-            TitleSort = GetString(best, "title"),
-            Year = GetInt(best, "year")?.ToString(CultureInfo.InvariantCulture),
-            OriginallyAvailableAt = GetString(best, "originallyAvailableAt"),
-            RatingKey = GetString(best, "ratingKey"),
-            ThumbUrl = GetString(best, "thumb"),
-            ArtUrl = GetString(best, "art")
+            Guid = getString(best, "guid"),
+            Title = getString(best, "title"),
+            TitleSort = getString(best, "title"),
+            Year = getInt(best, "year")?.ToString(CultureInfo.InvariantCulture),
+            OriginallyAvailableAt = getString(best, "originallyAvailableAt"),
+            RatingKey = getString(best, "ratingKey"),
+            ThumbUrl = getString(best, "thumb"),
+            ArtUrl = getString(best, "art")
         };
 
         return rec.Guid is null ? null : rec;
@@ -734,7 +734,7 @@ internal sealed class PlexTvClient
     {
         try
         {
-            EnrichCore(rec, json);
+            enrichCore(rec, json);
         }
         catch
         {
@@ -742,7 +742,7 @@ internal sealed class PlexTvClient
         }
     }
 
-    private static void EnrichCore(SidecarItem rec,
+    private static void enrichCore(SidecarItem rec,
                                    string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -751,7 +751,7 @@ internal sealed class PlexTvClient
         if (!mc.TryGetProperty("Metadata", out var arr)) return;
         JsonElement md = default;
 
-        foreach (var m in AsArray(arr))
+        foreach (var m in asArray(arr))
         {
             md = m;
 
@@ -760,27 +760,27 @@ internal sealed class PlexTvClient
 
         if (md.ValueKind == JsonValueKind.Undefined) return;
 
-        var guid = GetString(md, "guid");
+        var guid = getString(md, "guid");
         if (!string.IsNullOrEmpty(guid)) rec.Guid = guid;
-        var title = GetString(md, "title");
+        var title = getString(md, "title");
 
         if (!string.IsNullOrEmpty(title))
         {
             rec.Title = title;
             rec.TitleSort = title;
         }
-        var y = GetInt(md, "year");
+        var y = getInt(md, "year");
         if (y.HasValue) rec.Year = y.Value.ToString(CultureInfo.InvariantCulture);
 
-        var s = GetString(md, "summary");
+        var s = getString(md, "summary");
         if (!string.IsNullOrEmpty(s)) rec.Summary = s;
-        s = GetString(md, "tagline");
+        s = getString(md, "tagline");
         if (!string.IsNullOrEmpty(s)) rec.Tagline = s;
-        s = GetString(md, "studio");
+        s = getString(md, "studio");
         if (!string.IsNullOrEmpty(s)) rec.Studio = s;
-        s = GetString(md, "contentRating");
+        s = getString(md, "contentRating");
         if (!string.IsNullOrEmpty(s)) rec.ContentRating = s;
-        s = GetString(md, "originallyAvailableAt");
+        s = getString(md, "originallyAvailableAt");
         if (!string.IsNullOrEmpty(s)) rec.OriginallyAvailableAt = s;
 
         if (md.TryGetProperty("audienceRating", out var ar))
@@ -795,23 +795,23 @@ internal sealed class PlexTvClient
             };
 
         if (md.TryGetProperty("Rating", out var ratings))
-            rec.Ratings = MapRatings(ratings);
-        if (md.TryGetProperty("Role", out var roles)) rec.Roles = MapPeople(roles);
-        if (md.TryGetProperty("Director", out var dirs)) rec.Directors = MapPeople(dirs);
-        if (md.TryGetProperty("Writer", out var ws)) rec.Writers = MapPeople(ws);
-        if (md.TryGetProperty("Producer", out var ps)) rec.Producers = MapPeople(ps);
-        if (md.TryGetProperty("Country", out var cs)) rec.Countries = MapStrings(cs, "tag");
-        if (md.TryGetProperty("Genre", out var gs)) rec.Genres = MapStrings(gs, "tag");
-        if (md.TryGetProperty("Guid", out var gids)) rec.Guids = MapStrings(gids, "id");
+            rec.Ratings = mapRatings(ratings);
+        if (md.TryGetProperty("Role", out var roles)) rec.Roles = mapPeople(roles);
+        if (md.TryGetProperty("Director", out var dirs)) rec.Directors = mapPeople(dirs);
+        if (md.TryGetProperty("Writer", out var ws)) rec.Writers = mapPeople(ws);
+        if (md.TryGetProperty("Producer", out var ps)) rec.Producers = mapPeople(ps);
+        if (md.TryGetProperty("Country", out var cs)) rec.Countries = mapStrings(cs, "tag");
+        if (md.TryGetProperty("Genre", out var gs)) rec.Genres = mapStrings(gs, "tag");
+        if (md.TryGetProperty("Guid", out var gids)) rec.Guids = mapStrings(gids, "id");
 
         // Detail is authoritative over the search payload PickCandidate may have filled in.
-        var thumb = GetString(md, "thumb");
+        var thumb = getString(md, "thumb");
         if (!string.IsNullOrEmpty(thumb)) rec.ThumbUrl = thumb;
-        var backdrop = GetString(md, "art");
+        var backdrop = getString(md, "art");
         if (!string.IsNullOrEmpty(backdrop)) rec.ArtUrl = backdrop;
     }
 
-    private async Task<string?> FetchAsync(string url,
+    private async Task<string?> fetchAsync(string url,
                                            bool withToken,
                                            CancellationToken ct)
     {
@@ -819,11 +819,11 @@ internal sealed class PlexTvClient
 
         // Without this the provider answers XML (half-serialized), which cannot be parsed.
         req.Headers.TryAddWithoutValidation("Accept", "application/json");
-        var token = _plexToken;
+        var token = plexToken;
 
         if (withToken && !string.IsNullOrEmpty(token))
             req.Headers.TryAddWithoutValidation("X-Plex-Token", token);
-        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        using var resp = await http.SendAsync(req, ct).ConfigureAwait(false);
 
         if (!resp.IsSuccessStatusCode) return null;
 
@@ -834,16 +834,16 @@ internal sealed class PlexTvClient
     /// Flattens MediaContainer.SearchResults[].SearchResult[].Metadata[] in relevance order,
     /// carrying each SearchResult's score (present in live responses, absent in test fixtures).
     /// </summary>
-    private static List<(JsonElement Md, double? Score)> FlattenCandidates(JsonElement searchResults,
+    private static List<(JsonElement Md, double? Score)> flattenCandidates(JsonElement searchResults,
                                                                            string allowedType = "movie")
     {
         var list = new List<(JsonElement, double?)>();
 
-        foreach (var sr in AsArray(searchResults))
+        foreach (var sr in asArray(searchResults))
         {
             if (!sr.TryGetProperty("SearchResult", out var inner)) continue;
 
-            foreach (var res in AsArray(inner))
+            foreach (var res in asArray(inner))
             {
                 double? score = null;
 
@@ -858,9 +858,9 @@ internal sealed class PlexTvClient
 
                 if (!res.TryGetProperty("Metadata", out var md)) continue;
 
-                foreach (var m in AsArray(md))
+                foreach (var m in asArray(md))
                 {
-                    var t = GetString(m, "type");
+                    var t = getString(m, "type");
 
                     if (t is not null && t != allowedType) continue;
                     list.Add((m, score));
@@ -871,7 +871,7 @@ internal sealed class PlexTvClient
         return list;
     }
 
-    private static IEnumerable<JsonElement> AsArray(JsonElement el)
+    private static IEnumerable<JsonElement> asArray(JsonElement el)
     {
         if (el.ValueKind == JsonValueKind.Array) return el.EnumerateArray();
         if (el.ValueKind == JsonValueKind.Object) return new[] { el };
@@ -879,13 +879,13 @@ internal sealed class PlexTvClient
         return Array.Empty<JsonElement>();
     }
 
-    private static string? GetString(JsonElement el,
+    private static string? getString(JsonElement el,
                                      string name) =>
         el.ValueKind == JsonValueKind.Object && el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
             ? v.GetString()
             : null;
 
-    private static int? GetInt(JsonElement el,
+    private static int? getInt(JsonElement el,
                                string name)
     {
         if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(name, out var v)) return null;
@@ -895,7 +895,7 @@ internal sealed class PlexTvClient
         return null;
     }
 
-    private static double? GetDouble(JsonElement el,
+    private static double? getDouble(JsonElement el,
                                      string name)
     {
         if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(name, out var v)) return null;
@@ -907,48 +907,48 @@ internal sealed class PlexTvClient
         return null;
     }
 
-    private static List<TagRef>? MapPeople(JsonElement arr)
+    private static List<TagRef>? mapPeople(JsonElement arr)
     {
         var list = new List<TagRef>();
 
-        foreach (var m in AsArray(arr))
+        foreach (var m in asArray(arr))
         {
-            var tag = GetString(m, "tag");
+            var tag = getString(m, "tag");
 
             if (string.IsNullOrEmpty(tag)) continue;
 
             list.Add(new TagRef
             {
                 Tag = tag,
-                TagKey = GetString(m, "id"),
-                Thumb = GetString(m, "thumb"),
-                Role = GetString(m, "role")
+                TagKey = getString(m, "id"),
+                Thumb = getString(m, "thumb"),
+                Role = getString(m, "role")
             });
         }
 
         return list.Count > 0 ? list : null;
     }
 
-    private static List<string>? MapStrings(JsonElement arr,
+    private static List<string>? mapStrings(JsonElement arr,
                                             string field)
     {
         var list = new List<string>();
 
-        foreach (var m in AsArray(arr))
+        foreach (var m in asArray(arr))
         {
-            var v = m.ValueKind == JsonValueKind.String ? m.GetString() : GetString(m, field);
+            var v = m.ValueKind == JsonValueKind.String ? m.GetString() : getString(m, field);
             if (!string.IsNullOrEmpty(v)) list.Add(v!);
         }
 
         return list.Count > 0 ? list : null;
     }
 
-    private static List<RatingRef>? MapRatings(JsonElement arr)
+    private static List<RatingRef>? mapRatings(JsonElement arr)
     {
         var list = new List<RatingRef>();
 
-        foreach (var m in AsArray(arr))
-            list.Add(new RatingRef { Image = GetString(m, "image"), Type = GetString(m, "type"), Value = GetDouble(m, "value") });
+        foreach (var m in asArray(arr))
+            list.Add(new RatingRef { Image = getString(m, "image"), Type = getString(m, "type"), Value = getDouble(m, "value") });
 
         return list.Count > 0 ? list : null;
     }

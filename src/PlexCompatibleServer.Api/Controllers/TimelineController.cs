@@ -14,12 +14,12 @@ namespace PlexCompatibleServer.Api.Controllers;
 [ApiController]
 public sealed class TimelineController : ControllerBase
 {
-    private readonly IMediaRepository _repo;
+    private readonly IMediaRepository repo;
 
     // Trailing digits of a "/library/metadata/5"-style key; compiled once, not per report.
-    private static readonly Regex TrailingId = new(@"(\d+)$", RegexOptions.Compiled);
+    private static readonly Regex trailingId = new(@"(\d+)$", RegexOptions.Compiled);
 
-    public TimelineController(IMediaRepository repo) => _repo = repo;
+    public TimelineController(IMediaRepository repo) => this.repo = repo;
 
     [HttpGet("/:/timeline")]
     [Produces("application/xml", "application/json")]
@@ -29,13 +29,13 @@ public sealed class TimelineController : ControllerBase
         [FromQuery] int time = 0,
         [FromQuery] int duration = 0,
         [FromQuery] string state = "",
-        [FromQuery] int playQueueItemID = 0,
+        [FromQuery] int playQueueItemId = 0,
         CancellationToken ct = default)
     {
         var id = ratingKey > 0 ? ratingKey : ParseKey(key);
         if (id > 0)
         {
-            await _repo.SaveProgressAsync(id, time, duration, DateTimeOffset.UtcNow, ct);
+            await repo.SaveProgressAsync(id, time, duration, DateTimeOffset.UtcNow, ct);
         }
 
         return PlexResults.Empty(this);
@@ -56,7 +56,7 @@ public sealed class TimelineController : ControllerBase
         var id = ParseKey(key);
         if (id > 0)
         {
-            await _repo.MarkWatchedAsync(id, DateTimeOffset.UtcNow, ct);
+            await repo.MarkWatchedAsync(id, DateTimeOffset.UtcNow, ct);
         }
 
         return PlexResults.Empty(this);
@@ -72,7 +72,7 @@ public sealed class TimelineController : ControllerBase
         var id = ParseKey(key);
         if (id > 0)
         {
-            await _repo.ClearProgressAsync(id, ct);
+            await repo.ClearProgressAsync(id, ct);
         }
 
         return PlexResults.Empty(this);
@@ -84,7 +84,7 @@ public sealed class TimelineController : ControllerBase
         if (string.IsNullOrWhiteSpace(value)) return 0;
         if (int.TryParse(value, out var bare)) return bare;
 
-        var match = TrailingId.Match(value);
+        var match = trailingId.Match(value);
         return match.Success && int.TryParse(match.Groups[1].Value, out var id) ? id : 0;
     }
 
@@ -105,7 +105,7 @@ public sealed class TimelineController : ControllerBase
         var id = ParseKey(ratingKey);
         if (id > 0)
         {
-            await _repo.DismissFromContinueWatchingAsync(id, ct);
+            await repo.DismissFromContinueWatchingAsync(id, ct);
         }
 
         return PlexResults.Empty(this);

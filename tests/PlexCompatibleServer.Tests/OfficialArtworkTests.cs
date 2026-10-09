@@ -16,22 +16,22 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class OfficialArtworkTests
 {
-    private string _dir = "";
+    private string dir = "";
 
     [SetUp]
     public void SetUp()
     {
-        _dir = Path.Combine(Path.GetTempPath(), "pcs-official-art-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_dir);
+        dir = Path.Combine(Path.GetTempPath(), "pcs-official-art-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
     }
 
     [TearDown]
     public void TearDown()
     {
-        try { Directory.Delete(_dir, true); } catch { }
+        try { Directory.Delete(dir, true); } catch { }
     }
 
-    private static byte[] FakeJpeg()
+    private static byte[] fakeJpeg()
     {
         var bytes = new byte[600];
         bytes[0] = 0xFF;
@@ -43,9 +43,9 @@ public class OfficialArtworkTests
 
     private sealed class StubHandler : HttpMessageHandler
     {
-        private readonly Func<HttpResponseMessage> _respond;
+        private readonly Func<HttpResponseMessage> respond;
 
-        public StubHandler(Func<HttpResponseMessage> respond) => _respond = respond;
+        public StubHandler(Func<HttpResponseMessage> respond) => this.respond = respond;
 
         public int Calls;
 
@@ -54,18 +54,18 @@ public class OfficialArtworkTests
         {
             Calls++;
 
-            return Task.FromResult(_respond());
+            return Task.FromResult(respond());
         }
     }
 
-    private static HttpResponseMessage Ok(HttpContent content) =>
+    private static HttpResponseMessage ok(HttpContent content) =>
         new(System.Net.HttpStatusCode.OK) { Content = content };
 
     [Test]
     public async Task EnsureAsync_downloads_once_and_reuses_the_cached_file()
     {
-        var handler = new StubHandler(() => Ok(new ByteArrayContent(FakeJpeg())));
-        var cache = new RemoteArtworkCache(new MediaArtOptions { CacheDirectory = _dir }, handler);
+        var handler = new StubHandler(() => ok(new ByteArrayContent(fakeJpeg())));
+        var cache = new RemoteArtworkCache(new MediaArtOptions { CacheDirectory = dir }, handler);
         var url = "https://metadata-static.plex.tv/poster.jpg";
 
         var first = await cache.EnsureAsync(url, CancellationToken.None);
@@ -83,26 +83,26 @@ public class OfficialArtworkTests
     [Test]
     public async Task EnsureAsync_rejects_non_image_bodies_and_http_errors()
     {
-        var html = new StubHandler(() => Ok(new StringContent(
+        var html = new StubHandler(() => ok(new StringContent(
             "<html>" + new string('x', 600) + "</html>", Encoding.UTF8, "text/html")));
-        var cache = new RemoteArtworkCache(new MediaArtOptions { CacheDirectory = _dir }, html);
+        var cache = new RemoteArtworkCache(new MediaArtOptions { CacheDirectory = dir }, html);
 
         Assert.That(await cache.EnsureAsync("https://example/fake.jpg", CancellationToken.None),
             Is.Null, "an error page must never be written where the image routes serve from");
 
         var missing = new StubHandler(() =>
             new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
-        var cache2 = new RemoteArtworkCache(new MediaArtOptions { CacheDirectory = _dir }, missing);
+        var cache2 = new RemoteArtworkCache(new MediaArtOptions { CacheDirectory = dir }, missing);
         Assert.That(await cache2.EnsureAsync("https://example/gone.jpg", CancellationToken.None),
             Is.Null);
 
-        Assert.That(Directory.GetFiles(_dir, "official-*"), Is.Empty);
+        Assert.That(Directory.GetFiles(dir, "official-*"), Is.Empty);
     }
 
     [Test]
     public void SniffExtension_accepts_servable_formats_only()
     {
-        Assert.That(RemoteArtworkCache.SniffExtension(FakeJpeg()), Is.EqualTo(".jpg"));
+        Assert.That(RemoteArtworkCache.SniffExtension(fakeJpeg()), Is.EqualTo(".jpg"));
 
         var png = new byte[600];
         png[0] = 0x89;
@@ -127,7 +127,7 @@ public class OfficialArtworkTests
         Assert.That(RemoteArtworkCache.SniffExtension(Array.Empty<byte>()), Is.Null);
     }
 
-    private static MediaItem Item(int id, LibraryType type, string? officialParent = null,
+    private static MediaItem item(int id, LibraryType type, string? officialParent = null,
                                   string? officialGrandparent = null)
     {
         var library = new MediaLibrary
@@ -156,7 +156,7 @@ public class OfficialArtworkTests
     [Test]
     public void ToVideo_states_season_and_show_poster_urls_only_with_official_art()
     {
-        var covered = Item(44, LibraryType.Show,
+        var covered = item(44, LibraryType.Show,
             officialParent: @"C:\art\season.jpg",
             officialGrandparent: @"C:\art\show.jpg");
         var video = VideoMapper.ToVideo(covered);
@@ -166,12 +166,12 @@ public class OfficialArtworkTests
 
         // Before the artwork sync has run there is nothing for those routes to serve: stating
         // them anyway would leave the card blank where the client could still fall back.
-        var bare = Item(45, LibraryType.Show);
+        var bare = item(45, LibraryType.Show);
         var bareVideo = VideoMapper.ToVideo(bare);
         Assert.That(bareVideo.ParentThumb, Is.Empty);
         Assert.That(bareVideo.GrandparentThumb, Is.Empty);
 
-        var movie = Item(3, LibraryType.Movie);
+        var movie = item(3, LibraryType.Movie);
         var movieVideo = VideoMapper.ToVideo(movie);
         Assert.That(movieVideo.ParentThumb, Is.Empty);
         Assert.That(movieVideo.GrandparentThumb, Is.Empty);
@@ -219,10 +219,10 @@ public class OfficialArtworkTests
             => Task.CompletedTask;
     }
 
-    private string Touch(string name)
+    private string touch(string name)
     {
-        var path = Path.Combine(_dir, name);
-        File.WriteAllBytes(path, FakeJpeg());
+        var path = Path.Combine(dir, name);
+        File.WriteAllBytes(path, fakeJpeg());
 
         return path;
     }
@@ -230,9 +230,9 @@ public class OfficialArtworkTests
     [Test]
     public async Task MetadataThumb_prefers_the_official_poster_and_falls_back_to_the_frame()
     {
-        var official = Touch("official-movie.jpg");
-        var frame = Touch("frame-movie.jpg");
-        var item = Item(3, LibraryType.Movie);
+        var official = touch("official-movie.jpg");
+        var frame = touch("frame-movie.jpg");
+        var item = OfficialArtworkTests.item(3, LibraryType.Movie);
         item.OfficialPosterPath = official;
         item.PosterPath = frame;
         var controller = new MetadataController(new FakeRepo(item), new ServerOptions(),
@@ -242,7 +242,7 @@ public class OfficialArtworkTests
         Assert.That(hit, Is.Not.Null);
         Assert.That(hit!.FileName, Is.EqualTo(official));
 
-        item.OfficialPosterPath = Path.Combine(_dir, "deleted.jpg");
+        item.OfficialPosterPath = Path.Combine(dir, "deleted.jpg");
         var fallback = await controller.Thumb(3, CancellationToken.None) as PhysicalFileResult;
         Assert.That(fallback!.FileName, Is.EqualTo(frame),
             "a vanished official file must fall back to the frame extract");
@@ -251,10 +251,10 @@ public class OfficialArtworkTests
     [Test]
     public async Task MetadataParentThumb_chains_season_show_then_frame()
     {
-        var season = Touch("official-season.jpg");
-        var show = Touch("official-show.jpg");
-        var frame = Touch("frame-episode.jpg");
-        var item = Item(44, LibraryType.Show, season, show);
+        var season = touch("official-season.jpg");
+        var show = touch("official-show.jpg");
+        var frame = touch("frame-episode.jpg");
+        var item = OfficialArtworkTests.item(44, LibraryType.Show, season, show);
         item.PosterPath = frame;
         var controller = new MetadataController(new FakeRepo(item), new ServerOptions(),
                                                 new StreamSelectionStore(), new ExternalMetadata());
@@ -262,7 +262,7 @@ public class OfficialArtworkTests
         var all = await controller.ParentThumb(44, CancellationToken.None) as PhysicalFileResult;
         Assert.That(all!.FileName, Is.EqualTo(season));
 
-        item.OfficialParentPosterPath = Path.Combine(_dir, "deleted.jpg");
+        item.OfficialParentPosterPath = Path.Combine(dir, "deleted.jpg");
         var showOnly = await controller.ParentThumb(44, CancellationToken.None) as PhysicalFileResult;
         Assert.That(showOnly!.FileName, Is.EqualTo(show));
 
@@ -278,12 +278,12 @@ public class OfficialArtworkTests
     [Test]
     public async Task PhotoTranscode_serves_the_season_and_show_slots_from_official_art()
     {
-        var season = Touch("official-season.jpg");
-        var show = Touch("official-show.jpg");
-        var poster = Touch("frame-poster.jpg");
-        var item = Item(44, LibraryType.Show, season, show);
+        var season = touch("official-season.jpg");
+        var show = touch("official-show.jpg");
+        var poster = touch("frame-poster.jpg");
+        var item = OfficialArtworkTests.item(44, LibraryType.Show, season, show);
         item.PosterPath = poster;
-        var controller = new PhotoController(new FakeRepo(item), Transcoder());
+        var controller = new PhotoController(new FakeRepo(item), transcoder());
 
         var parent = await controller.Transcode("/library/metadata/44/parentThumb/1790948816",
                                                 600, 900, "") as PhysicalFileResult;
@@ -299,14 +299,14 @@ public class OfficialArtworkTests
         Assert.That(thumb!.FileName, Is.EqualTo(poster));
 
         // Never 404: with nothing on disk at all the placeholder still comes back.
-        var empty = Item(9, LibraryType.Show);
-        var placeholder = new PhotoController(new FakeRepo(empty), Transcoder());
+        var empty = OfficialArtworkTests.item(9, LibraryType.Show);
+        var placeholder = new PhotoController(new FakeRepo(empty), transcoder());
         var result = await placeholder.Transcode("/library/metadata/9/thumb/1", 600, 900, "");
         Assert.That(result, Is.InstanceOf<FileContentResult>());
     }
 
-    private ImageTranscoder Transcoder() =>
-        new(new MediaArtOptions { CacheDirectory = _dir }, NullLogger<ImageTranscoder>.Instance);
+    private ImageTranscoder transcoder() =>
+        new(new MediaArtOptions { CacheDirectory = dir }, NullLogger<ImageTranscoder>.Instance);
 
     [Test]
     public void FitWithin_preserves_aspect_and_only_enlarges_when_asked()
@@ -324,18 +324,18 @@ public class OfficialArtworkTests
     [Test]
     public void ImageSize_reads_png_and_jpeg_headers_and_rejects_anything_else()
     {
-        var png = Path.Combine(_dir, "pixel.png");
+        var png = Path.Combine(dir, "pixel.png");
         File.WriteAllBytes(png, Convert.FromBase64String(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="));
         Assert.That(ImageSize.TryGet(png, out var pixelW, out var pixelH), Is.True);
         Assert.That((pixelW, pixelH), Is.EqualTo((1, 1)));
 
-        var jpeg = Path.Combine(_dir, "sized.jpg");
-        File.WriteAllBytes(jpeg, JpegHeader(200, 300));
+        var jpeg = Path.Combine(dir, "sized.jpg");
+        File.WriteAllBytes(jpeg, jpegHeader(200, 300));
         Assert.That(ImageSize.TryGet(jpeg, out var jpegW, out var jpegH), Is.True);
         Assert.That((jpegW, jpegH), Is.EqualTo((200, 300)));
 
-        var junk = Path.Combine(_dir, "junk.bin");
+        var junk = Path.Combine(dir, "junk.bin");
         File.WriteAllBytes(junk, [1, 2, 3]);
         Assert.That(ImageSize.TryGet(junk, out _, out _), Is.False);
     }
@@ -343,34 +343,34 @@ public class OfficialArtworkTests
     [Test]
     public async Task ResizeAsync_returns_cached_resizes_and_falls_back_to_the_original()
     {
-        var transcoder = Transcoder();
+        var transcoder = this.transcoder();
 
         // Dimensions already match the box: the source goes back with no work at all.
-        var exact = Path.Combine(_dir, "exact.jpg");
-        File.WriteAllBytes(exact, JpegHeader(240, 360));
+        var exact = Path.Combine(dir, "exact.jpg");
+        File.WriteAllBytes(exact, jpegHeader(240, 360));
         Assert.That(await transcoder.ResizeAsync(exact, 240, 360, true, default), Is.EqualTo(exact));
 
         // A cached resize short-circuits before ffmpeg is ever consulted.
-        var source = Path.Combine(_dir, "source.jpg");
-        File.WriteAllBytes(source, JpegHeader(960, 1440));
-        var cached = Path.Combine(_dir, $"{ImageTranscoder.SourceKey(source)}-240x360.jpg");
-        File.WriteAllBytes(cached, FakeJpeg());
+        var source = Path.Combine(dir, "source.jpg");
+        File.WriteAllBytes(source, jpegHeader(960, 1440));
+        var cached = Path.Combine(dir, $"{ImageTranscoder.SourceKey(source)}-240x360.jpg");
+        File.WriteAllBytes(cached, fakeJpeg());
         Assert.That(await transcoder.ResizeAsync(source, 240, 360, true, default), Is.EqualTo(cached));
 
         // Undecodable payload (or no ffmpeg on the machine): the original comes back either way.
-        var undecodable = Path.Combine(_dir, "undecodable.jpg");
-        File.WriteAllBytes(undecodable, JpegHeader(960, 1440));
+        var undecodable = Path.Combine(dir, "undecodable.jpg");
+        File.WriteAllBytes(undecodable, jpegHeader(960, 1440));
         Assert.That(await transcoder.ResizeAsync(undecodable, 240, 360, true, default),
             Is.EqualTo(undecodable));
 
         // No size asked, or nothing on disk: pass the input through untouched.
         Assert.That(await transcoder.ResizeAsync(source, 0, 0, true, default), Is.EqualTo(source));
-        var missing = Path.Combine(_dir, "missing.jpg");
+        var missing = Path.Combine(dir, "missing.jpg");
         Assert.That(await transcoder.ResizeAsync(missing, 240, 360, true, default),
             Is.EqualTo(missing));
     }
 
-    private static byte[] JpegHeader(int width, int height) =>
+    private static byte[] jpegHeader(int width, int height) =>
     [
         0xFF, 0xD8,
         0xFF, 0xE0, 0x00, 0x10,                     // APP0/JFIF, 16 bytes
@@ -407,7 +407,7 @@ public class OfficialArtworkTests
             var library = new MediaLibrary
             {
                 Name = "Movies",
-                RootPath = _dir,
+                RootPath = dir,
                 Type = LibraryType.Movie
             };
             db.Libraries.Add(library);
@@ -415,7 +415,7 @@ public class OfficialArtworkTests
             var item = new MediaItem
             {
                 LibraryId = library.Id,
-                FilePath = Path.Combine(_dir, "Film.mkv"),
+                FilePath = Path.Combine(dir, "Film.mkv"),
                 Title = "Film"
             };
             db.Items.Add(item);

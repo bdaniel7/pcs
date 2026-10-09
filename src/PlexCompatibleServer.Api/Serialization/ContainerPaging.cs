@@ -19,11 +19,11 @@ public static class ContainerPaging
     public static List<T> Page<T>(HttpContext http, IReadOnlyList<T> items, out int offset, out int total)
     {
         total = items.Count;
-        offset = Read(http, "X-Plex-Container-Start") ?? 0;
+        offset = read(http, "X-Plex-Container-Start") ?? 0;
         if (offset < 0) offset = 0;
         if (offset > total) offset = total;
 
-        var take = Read(http, "X-Plex-Container-Size");
+        var take = read(http, "X-Plex-Container-Size");
         if (take is not { } limit) return items.Skip(offset).ToList();
 
         if (limit < 0) limit = 0;
@@ -31,7 +31,7 @@ public static class ContainerPaging
         return items.Skip(offset).Take(limit).ToList();
     }
 
-    private static int? Read(HttpContext http, string name) =>
+    private static int? read(HttpContext http, string name) =>
         int.TryParse(http.Request.Query[name], out var fromQuery) ? fromQuery :
         int.TryParse(http.Request.Headers[name], out var fromHeader) ? fromHeader :
         null;

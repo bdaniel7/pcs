@@ -6,8 +6,8 @@ public static class PlexResults
 {
     public static IActionResult Container<T>(ControllerBase controller, T model)
     {
-        var mediaType = MediaType(controller);
-        return controller.Content(Render(controller, model), mediaType, System.Text.Encoding.UTF8);
+        var mediaType = PlexResults.mediaType(controller);
+        return controller.Content(render(controller, model), mediaType, System.Text.Encoding.UTF8);
     }
 
     public static IActionResult Empty(ControllerBase controller)
@@ -29,18 +29,18 @@ public static class PlexResults
 
         return new ContentResult
         {
-            Content = Render(controller, container),
-            ContentType = MediaType(controller),
+            Content = render(controller, container),
+            ContentType = mediaType(controller),
             StatusCode = (int)status
         };
     }
 
-    private static string Render<T>(ControllerBase controller, T model)
+    private static string render<T>(ControllerBase controller, T model)
         => WantsJson(controller)
             ? PlexJson.Serialize(model)
             : PlexXml.Serialize(model);
 
-    private static string MediaType(ControllerBase controller)
+    private static string mediaType(ControllerBase controller)
         => WantsJson(controller) ? "application/json" : "application/xml";
 
     public static bool WantsJson(ControllerBase controller)

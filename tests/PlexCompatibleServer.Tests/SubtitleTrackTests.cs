@@ -20,26 +20,26 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class SubtitleTrackTests
 {
-    private const string VideoName = "Emily.The.Criminal.2022.1080p.WEBRip.x264.AAC5.1-[YTS.MX].mp4";
+    private const string VIDEO_NAME = "Emily.The.Criminal.2022.1080p.WEBRip.x264.AAC5.1-[YTS.MX].mp4";
 
-    private string _dir = "";
+    private string dir = "";
 
     [SetUp]
     public void SetUp()
     {
-        _dir = Path.Combine(Path.GetTempPath(), "plex-track-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_dir);
+        dir = Path.Combine(Path.GetTempPath(), "plex-track-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
     }
 
     [TearDown]
     public void TearDown()
     {
-        if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
     }
 
-    private MediaItem BuildItem(params MediaStreamInfo[] streams)
+    private MediaItem buildItem(params MediaStreamInfo[] streams)
     {
-        var videoPath = Path.Combine(_dir, VideoName);
+        var videoPath = Path.Combine(dir, VIDEO_NAME);
         File.WriteAllBytes(videoPath, [0x00]);
 
         var library = new MediaLibrary { Id = 1, Name = "Movies", Type = LibraryType.Movie };
@@ -48,7 +48,7 @@ public class SubtitleTrackTests
             Id = 5,
             LibraryId = library.Id,
             Library = library,
-            Title = Path.GetFileNameWithoutExtension(VideoName),
+            Title = Path.GetFileNameWithoutExtension(VIDEO_NAME),
             FilePath = videoPath,
             FileSize = 1,
             Width = 1920,
@@ -60,7 +60,7 @@ public class SubtitleTrackTests
         return item;
     }
 
-    private static MediaStreamInfo VideoStream() => new()
+    private static MediaStreamInfo videoStream() => new()
     {
         StreamType = 1,
         Codec = "h264",
@@ -69,7 +69,7 @@ public class SubtitleTrackTests
         Location = "direct"
     };
 
-    private static MediaStreamInfo AudioStream() => new()
+    private static MediaStreamInfo audioStream() => new()
     {
         StreamType = 2,
         Codec = "aac",
@@ -77,7 +77,7 @@ public class SubtitleTrackTests
         Location = "direct"
     };
 
-    private static MediaStreamInfo EmbeddedSubtitle() => new()
+    private static MediaStreamInfo embeddedSubtitle() => new()
     {
         StreamType = 3,
         Codec = "subrip",
@@ -86,9 +86,9 @@ public class SubtitleTrackTests
         Location = "direct"
     };
 
-    private string Sidecar(string suffix)
+    private string sidecar(string suffix)
     {
-        var path = Path.Combine(_dir, Path.GetFileNameWithoutExtension(VideoName) + suffix + ".srt");
+        var path = Path.Combine(dir, Path.GetFileNameWithoutExtension(VIDEO_NAME) + suffix + ".srt");
         File.WriteAllText(path, "1\n00:00:01,000 --> 00:00:02,000\nhello\n");
         return path;
     }
@@ -96,8 +96,8 @@ public class SubtitleTrackTests
     [Test]
     public void TaggedSidecarIsPublishedAsItsOwnTrack()
     {
-        var item = BuildItem(VideoStream(), AudioStream());
-        Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream());
+        sidecar(".en");
 
         var part = VideoMapper.ToVideo(item).Media[0].Parts[0];
 
@@ -121,8 +121,8 @@ public class SubtitleTrackTests
     [Test]
     public void EmbeddedAndSidecarTracksAreBothPublished()
     {
-        var item = BuildItem(VideoStream(), AudioStream(), EmbeddedSubtitle());
-        Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream(), embeddedSubtitle());
+        sidecar(".en");
 
         var part = VideoMapper.ToVideo(item).Media[0].Parts[0];
 
@@ -140,7 +140,7 @@ public class SubtitleTrackTests
     [Test]
     public void BitmapSubtitleStaysUnfetchableInsideTheContainer()
     {
-        var item = BuildItem(VideoStream(), AudioStream(), new MediaStreamInfo
+        var item = buildItem(videoStream(), audioStream(), new MediaStreamInfo
         {
             StreamType = 3,
             Codec = "hdmv_pgs_subtitle",
@@ -163,8 +163,8 @@ public class SubtitleTrackTests
     [Test]
     public void SubtitleTracksAreNeverPreSelectedButVideoAndAudioAre()
     {
-        var item = BuildItem(VideoStream(), AudioStream(), EmbeddedSubtitle());
-        Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream(), embeddedSubtitle());
+        sidecar(".en");
 
         var streams = VideoMapper.ToVideo(item).Media[0].Parts[0].Streams;
 
@@ -180,8 +180,8 @@ public class SubtitleTrackTests
     [Test]
     public void SidecarIsPublishedEvenWhenTheFileWasNeverProbed()
     {
-        var item = BuildItem();
-        Sidecar(".en");
+        var item = buildItem();
+        sidecar(".en");
 
         var part = VideoMapper.ToVideo(item).Media[0].Parts[0];
 
@@ -193,8 +193,8 @@ public class SubtitleTrackTests
     [Test]
     public async Task StreamFile_ServesTheTaggedSidecarThroughItsKey()
     {
-        var item = BuildItem(VideoStream(), AudioStream());
-        var sub = Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream());
+        var sub = sidecar(".en");
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore());
 
         var result = await controller.StreamFile(5002, CancellationToken.None) as FileStreamResult;
@@ -208,8 +208,8 @@ public class SubtitleTrackTests
     [Test]
     public async Task StreamFileAlt_ResolvesThroughThePartIdEvenForASmallStreamId()
     {
-        var item = BuildItem(VideoStream(), AudioStream());
-        var sub = Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream());
+        var sub = sidecar(".en");
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore());
 
         // Clients that address the track by its stream identifier (1, 2, ...) rather than by the
@@ -224,9 +224,9 @@ public class SubtitleTrackTests
     [Test]
     public async Task StreamFile_PicksTheRightFileWhenSeveralSidecarsExist()
     {
-        var item = BuildItem(VideoStream(), AudioStream());
-        var plain = Sidecar("");
-        var spanish = Sidecar(".es");
+        var item = buildItem(videoStream(), audioStream());
+        var plain = sidecar("");
+        var spanish = sidecar(".es");
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore());
 
         var first = await controller.StreamFile(5002, CancellationToken.None) as FileStreamResult;
@@ -241,7 +241,7 @@ public class SubtitleTrackTests
     [Test]
     public async Task EmbeddedSubtitleWithNoSidecar_AnswersWithAnEmptyBodyNotA404()
     {
-        var item = BuildItem(VideoStream(), AudioStream(), EmbeddedSubtitle());
+        var item = buildItem(videoStream(), audioStream(), embeddedSubtitle());
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore());
 
         var result = await controller.StreamFile(5002, CancellationToken.None) as ContentResult;
@@ -254,8 +254,8 @@ public class SubtitleTrackTests
     [Test]
     public async Task StreamFile_ForAnUnknownItemIsNotFound()
     {
-        var item = BuildItem(VideoStream(), AudioStream());
-        Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream());
+        sidecar(".en");
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore());
 
         var result = await controller.StreamFile(999002, CancellationToken.None);
@@ -266,8 +266,8 @@ public class SubtitleTrackTests
     [Test]
     public async Task Decision_FlagsTheSubtitleTheClientAskedForAndNoOther()
     {
-        var item = BuildItem(VideoStream(), AudioStream(), EmbeddedSubtitle());
-        Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream(), embeddedSubtitle());
+        sidecar(".en");
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
@@ -297,8 +297,8 @@ public class SubtitleTrackTests
     [Test]
     public async Task SetStreamSelection_RecordsTheChoiceAndPublishesItAsSelected()
     {
-        var item = BuildItem(VideoStream(), AudioStream(), EmbeddedSubtitle());
-        Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream(), embeddedSubtitle());
+        sidecar(".en");
         var store = new StreamSelectionStore();
         var controller = new VideoController(new FakePlayback(item), store)
         {
@@ -320,8 +320,8 @@ public class SubtitleTrackTests
     [Test]
     public async Task SetStreamSelection_ZeroClearsTheChosenSubtitle()
     {
-        var item = BuildItem(VideoStream(), AudioStream(), EmbeddedSubtitle());
-        Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream(), embeddedSubtitle());
+        sidecar(".en");
         var store = new StreamSelectionStore();
         var controller = new VideoController(new FakePlayback(item), store)
         {
@@ -339,7 +339,7 @@ public class SubtitleTrackTests
     [Test]
     public async Task SetStreamSelection_NamesAStreamThePartDoesNotHave()
     {
-        var item = BuildItem(VideoStream(), AudioStream());
+        var item = buildItem(videoStream(), audioStream());
         var store = new StreamSelectionStore();
         var controller = new VideoController(new FakePlayback(item), store)
         {
@@ -357,7 +357,7 @@ public class SubtitleTrackTests
     [Test]
     public async Task SetStreamSelection_ForAnUnknownPartIsNotFound()
     {
-        var item = BuildItem(VideoStream(), AudioStream());
+        var item = buildItem(videoStream(), audioStream());
         var store = new StreamSelectionStore();
         var controller = new VideoController(new FakePlayback(item), store)
         {
@@ -373,8 +373,8 @@ public class SubtitleTrackTests
     [Test]
     public async Task SubtitleTranscodeStart_ServesTheChosenTrackAsPlainSrt()
     {
-        var item = BuildItem(VideoStream(), AudioStream());
-        var sub = Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream());
+        var sub = sidecar(".en");
         var store = new StreamSelectionStore();
         var controller = new VideoController(new FakePlayback(item), store)
         {
@@ -394,8 +394,8 @@ public class SubtitleTrackTests
     [Test]
     public async Task SubtitleTranscodeStart_WithNoChoiceMadeAnswersAnEmptyBody()
     {
-        var item = BuildItem(VideoStream(), AudioStream());
-        Sidecar(".en");
+        var item = buildItem(videoStream(), audioStream());
+        sidecar(".en");
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
@@ -414,7 +414,7 @@ public class SubtitleTrackTests
     [Test]
     public async Task SubtitleTranscodeStart_ForAnUnknownPathIsNotFound()
     {
-        var item = BuildItem(VideoStream(), AudioStream());
+        var item = buildItem(videoStream(), audioStream());
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }

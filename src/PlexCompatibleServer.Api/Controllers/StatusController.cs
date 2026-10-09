@@ -7,8 +7,8 @@ namespace PlexCompatibleServer.Api.Controllers;
 [ApiController]
 public sealed class StatusController : ControllerBase
 {
-    private readonly ServerOptions _options;
-    public StatusController(ServerOptions options) => _options = options;
+    private readonly ServerOptions options;
+    public StatusController(ServerOptions options) => this.options = options;
 
     [HttpGet("/status/sessions")]
     [Produces("application/xml", "application/json")]
@@ -19,7 +19,7 @@ public sealed class StatusController : ControllerBase
         {
             new XmlStatusMetadata
             {
-                MachineIdentifier = _options.MachineIdentifier,
+                MachineIdentifier = options.MachineIdentifier,
                 State = "stopped"
             }
         }

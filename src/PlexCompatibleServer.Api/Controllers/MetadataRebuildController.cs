@@ -11,15 +11,15 @@ namespace PlexCompatibleServer.Api.Controllers;
 [ApiController]
 public sealed class MetadataRebuildController : ControllerBase
 {
-    private readonly MetadataSyncService _sync;
+    private readonly MetadataSyncService sync;
 
-    public MetadataRebuildController(MetadataSyncService sync) => _sync = sync;
+    public MetadataRebuildController(MetadataSyncService sync) => this.sync = sync;
 
     [HttpGet("/admin/metadata/backfill")]
     [HttpPost("/admin/metadata/backfill")]
     public async Task<IActionResult> Backfill(CancellationToken ct)
     {
-        var result = await _sync.RunAsync(ct);
+        var result = await sync.RunAsync(ct);
         return Ok(new
         {
             result.Scanned,

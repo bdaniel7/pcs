@@ -7,7 +7,7 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class RequestLogTests
 {
-    private static DefaultHttpContext Context(string query = "")
+    private static DefaultHttpContext context(string query = "")
     {
         var ctx = new DefaultHttpContext();
         ctx.Request.Method = "GET";
@@ -19,7 +19,7 @@ public class RequestLogTests
     [Test]
     public void DescribeIdentity_redacts_token_header_but_keeps_other_identity()
     {
-        var ctx = Context();
+        var ctx = context();
         ctx.Request.Headers["X-Plex-Token"] = "header-secret";
         ctx.Request.Headers["X-Plex-Client-Identifier"] = "abc";
 
@@ -33,7 +33,7 @@ public class RequestLogTests
     [Test]
     public void DescribeIdentity_redacts_token_query_parameter()
     {
-        var ctx = Context("?X-Plex-Token=query-secret&X-Plex-Client-Identifier=abc");
+        var ctx = context("?X-Plex-Token=query-secret&X-Plex-Client-Identifier=abc");
 
         var described = RequestLog.DescribeIdentity(ctx);
 
@@ -45,7 +45,7 @@ public class RequestLogTests
     [Test]
     public void DescribeTarget_redacts_token_and_preserves_surrounding_parameters()
     {
-        var ctx = Context("?X-Plex-Client-Identifier=abc&X-Plex-Token=query-secret&path=/movie");
+        var ctx = context("?X-Plex-Client-Identifier=abc&X-Plex-Token=query-secret&path=/movie");
 
         var target = RequestLog.DescribeTarget(ctx);
 
@@ -58,7 +58,7 @@ public class RequestLogTests
     [Test]
     public void DescribeTarget_redacts_token_when_it_is_the_last_parameter()
     {
-        var ctx = Context("?X-Plex-Client-Identifier=abc&X-Plex-Token=query-secret");
+        var ctx = context("?X-Plex-Client-Identifier=abc&X-Plex-Token=query-secret");
 
         var target = RequestLog.DescribeTarget(ctx);
 
@@ -69,7 +69,7 @@ public class RequestLogTests
     [Test]
     public void DescribeTarget_leaves_request_untouched_without_a_token()
     {
-        var ctx = Context("?X-Plex-Client-Identifier=abc");
+        var ctx = context("?X-Plex-Client-Identifier=abc");
 
         var target = RequestLog.DescribeTarget(ctx);
 

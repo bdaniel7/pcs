@@ -7,11 +7,11 @@ namespace PlexCompatibleServer.Api.Hosted;
 
 public sealed class MediaScanHostedService : BackgroundService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly MediaOptions _options;
-    private readonly MediaScanTrigger _trigger;
-    private readonly MetadataSyncTrigger _syncTrigger;
-    private readonly ILogger<MediaScanHostedService> _logger;
+    private readonly IServiceScopeFactory scopeFactory;
+    private readonly MediaOptions options;
+    private readonly MediaScanTrigger trigger;
+    private readonly MetadataSyncTrigger syncTrigger;
+    private readonly ILogger<MediaScanHostedService> logger;
 
     public MediaScanHostedService(
         IServiceScopeFactory scopeFactory,
@@ -20,28 +20,28 @@ public sealed class MediaScanHostedService : BackgroundService
         MetadataSyncTrigger syncTrigger,
         ILogger<MediaScanHostedService> logger)
     {
-        _scopeFactory = scopeFactory;
-        _options = options.Value;
-        _trigger = trigger;
-        _syncTrigger = syncTrigger;
-        _logger = logger;
+        this.scopeFactory = scopeFactory;
+        this.options = options.Value;
+        this.trigger = trigger;
+        this.syncTrigger = syncTrigger;
+        this.logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
 
-        await ScanAsync(MediaScanReason.Startup, stoppingToken);
+        await scanAsync(MediaScanReason.Startup, stoppingToken);
 
-        await foreach (var reason in _trigger.Requests.ReadAllAsync(stoppingToken))
-            await ScanAsync(reason, stoppingToken);
+        await foreach (var reason in trigger.Requests.ReadAllAsync(stoppingToken))
+            await scanAsync(reason, stoppingToken);
     }
 
-    private async Task ScanAsync(MediaScanReason reason, CancellationToken stoppingToken)
+    private async Task scanAsync(MediaScanReason reason, CancellationToken stoppingToken)
     {
         try
         {
-            var libraries = _options.Roots.Select(x => new MediaLibrary
+            var libraries = options.Roots.Select(x => new MediaLibrary
             {
                 Name = x.Name,
                 RootPath = Path.GetFullPath(x.Path),
@@ -50,17 +50,17 @@ public sealed class MediaScanHostedService : BackgroundService
                     : LibraryType.Movie
             }).ToList();
 
-            using var scope = _scopeFactory.CreateScope();
+            using var scope = scopeFactory.CreateScope();
             var scanner = scope.ServiceProvider.GetRequiredService<IMediaScanner>();
             await scanner.SynchronizeAsync(libraries, stoppingToken);
-            _logger.LogInformation("Media scan completed ({Reason}).", reason);
+            logger.LogInformation("Media scan completed ({Reason}).", reason);
             // New or changed files may lack plex.tv records - hand off to the metadata agent.
-            _syncTrigger.Request(MetadataSyncReason.ScanCompleted);
+            syncTrigger.Request(MetadataSyncReason.ScanCompleted);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Media scan failed ({Reason}).", reason);
+            logger.LogError(ex, "Media scan failed ({Reason}).", reason);
         }
     }
 }

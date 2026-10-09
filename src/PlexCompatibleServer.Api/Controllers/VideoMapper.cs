@@ -21,9 +21,9 @@ internal static class VideoMapper
         var extension = Path.GetExtension(x.FilePath).TrimStart('.').ToLowerInvariant();
         var container = string.IsNullOrEmpty(x.Container) ? extension : x.Container;
         var type = x.Library.Type == LibraryType.Movie ? "movie" : "episode";
-        var guid = $"plex://{type}/{StableGuidHex(x)}";
-        var slug = UniqueSlug(x.Title, guid);
-        var streams = ReadStreams(x, selections);
+        var guid = $"plex://{type}/{stableGuidHex(x)}";
+        var slug = uniqueSlug(x.Title, guid);
+        var streams = readStreams(x, selections);
 
         var part = new XmlPart
         {
@@ -41,7 +41,7 @@ internal static class VideoMapper
             Selected = "1",
             // Real Plex states this on the part as well as the media element. The JSON serializer
             // treats an unset (empty) attribute as absent, so it has to be set explicitly here.
-            Has64bitOffsets = "0",
+            Has64BitOffsets = "0",
             // The scanner only records items it found on disk and stores their length, so a non-zero
             // FileSize means the file is present and readable. The client treats a missing exists as
             // "not available" and refuses to play.
@@ -75,7 +75,7 @@ internal static class VideoMapper
             Selected = "1",
             // Real Plex reports false here even for libraries holding large files, so the client
             // clearly does not gate on it. Matching it keeps the JSON shape identical.
-            Has64bitOffsets = "0",
+            Has64BitOffsets = "0",
             PartCount = 1
         };
 
@@ -97,7 +97,7 @@ internal static class VideoMapper
             Studio = x.Library.Name,
             Year = x.Year is > 0 ? x.Year.Value.ToString() : "",
             Summary = x.Summary ?? "",
-            LibrarySectionID = includeLibrarySection ? x.LibraryId.ToString() : "",
+            LibrarySectionId = includeLibrarySection ? x.LibraryId.ToString() : "",
             LibrarySectionTitle = includeLibrarySection ? x.Library.Name : "",
             LibrarySectionKey = includeLibrarySection ? $"/library/sections/{x.LibraryId}" : "",
             Thumb = $"/library/metadata/{x.Id}/thumb/{timestamp}",
@@ -156,7 +156,7 @@ internal static class VideoMapper
         return video;
     }
 
-    private static List<XmlStream> ReadStreams(MediaItem x, StreamSelectionStore? selections)
+    private static List<XmlStream> readStreams(MediaItem x, StreamSelectionStore? selections)
     {
         // The viewer's own pick, written through PUT /library/parts/{id}. The client re-reads
         // this list right after choosing and looks for the track flagged selected, so it is the
@@ -250,7 +250,7 @@ internal static class VideoMapper
                     // The label has to reflect the real channel layout. Calling a 6-channel
                     // track "Stereo" makes the client pick the wrong output and can stop it
                     // playing the file at all.
-                    stream.DisplayTitle = $"{s.Codec!.ToUpperInvariant()} {ChannelLabel(stream.Channels)}";
+                    stream.DisplayTitle = $"{s.Codec!.ToUpperInvariant()} {channelLabel(stream.Channels)}";
                     stream.ExtendedDisplayTitle = stream.DisplayTitle;
                     break;
 
@@ -343,7 +343,7 @@ internal static class VideoMapper
     /// <summary>
     /// Renders a channel count the way Plex names audio tracks: 2 is "Stereo", 6 is "5.1", and so on.
     /// </summary>
-    private static string ChannelLabel(int channels) => channels switch
+    private static string channelLabel(int channels) => channels switch
     {
         <= 0 => "",
         1 => "Mono",
@@ -354,7 +354,7 @@ internal static class VideoMapper
     };
 
     /// <summary>Mirrors Plex's URL-safe title slug, e.g. "The End of Oak Street" becomes "the-end-of-oak-street".</summary>
-    private static string Slugify(string title)
+    private static string slugify(string title)
     {
         var chars = title.Trim().ToLowerInvariant()
             .Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-')
@@ -370,9 +370,9 @@ internal static class VideoMapper
     /// opened overwrites the first one's cached detail page. The discriminator is derived from the
     /// item's own guid, which already differs between the two records.
     /// </summary>
-    private static string UniqueSlug(string title, string guid)
+    private static string uniqueSlug(string title, string guid)
     {
-        var baseSlug = Slugify(title);
+        var baseSlug = slugify(title);
         if (baseSlug.Length == 0) baseSlug = "item";
 
         var hash = System.Security.Cryptography.SHA256.HashData(
@@ -389,7 +389,7 @@ internal static class VideoMapper
     /// breaks the detail page. Derived from the file path, which is stable across rescans - a
     /// string hash cannot be used because .NET randomises it per process.
     /// </summary>
-    private static string StableGuidHex(MediaItem x)
+    private static string stableGuidHex(MediaItem x)
     {
         var key = string.IsNullOrEmpty(x.FilePath) ? $"{x.LibraryId}/{x.Id}/{x.Title}" : x.FilePath;
         var hash = System.Security.Cryptography.SHA256.HashData(

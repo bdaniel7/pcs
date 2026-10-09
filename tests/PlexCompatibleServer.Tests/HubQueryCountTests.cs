@@ -20,8 +20,8 @@ public class HubQueryCountTests
     [Test]
     public async Task Hubs_loads_movie_and_show_rows_with_batched_queries()
     {
-        var repo = BuildRepo();
-        var controller = WithRequest(new HubController(repo, new ServerOptions(), new ExternalMetadata()));
+        var repo = buildRepo();
+        var controller = withRequest(new HubController(repo, new ServerOptions(), new ExternalMetadata()));
 
         await controller.Hubs(CancellationToken.None);
 
@@ -33,8 +33,8 @@ public class HubQueryCountTests
     [Test]
     public async Task HomeRecentlyAdded_loads_movie_rows_with_a_batched_query()
     {
-        var repo = BuildRepo();
-        var controller = WithRequest(new HubController(repo, new ServerOptions(), new ExternalMetadata()));
+        var repo = buildRepo();
+        var controller = withRequest(new HubController(repo, new ServerOptions(), new ExternalMetadata()));
 
         await controller.HomeRecentlyAdded(type: 1, CancellationToken.None);
 
@@ -45,8 +45,8 @@ public class HubQueryCountTests
     [Test]
     public async Task RecentlyAddedAll_loads_every_library_with_a_batched_query()
     {
-        var repo = BuildRepo();
-        var controller = WithRequest(new LibraryController(
+        var repo = buildRepo();
+        var controller = withRequest(new LibraryController(
             repo, new MediaScanTrigger(), new ServerOptions(), new StreamSelectionStore(), new ExternalMetadata()));
 
         await controller.RecentlyAddedAll(CancellationToken.None);
@@ -55,27 +55,27 @@ public class HubQueryCountTests
         Assert.That(repo.PerLibraryCalls, Is.Zero);
     }
 
-    private static T WithRequest<T>(T controller) where T : ControllerBase
+    private static T withRequest<T>(T controller) where T : ControllerBase
     {
         controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
         return controller;
     }
 
-    private static CountingRepo BuildRepo()
+    private static CountingRepo buildRepo()
     {
         var now = DateTimeOffset.UtcNow;
         var moviesOne = new MediaLibrary { Id = 1, Name = "Movies", Type = LibraryType.Movie };
         var moviesTwo = new MediaLibrary { Id = 2, Name = "More Movies", Type = LibraryType.Movie };
         var shows = new MediaLibrary { Id = 3, Name = "TV", Type = LibraryType.Show };
 
-        moviesOne.Items.Add(Item(1, moviesOne, "A", now));
-        moviesTwo.Items.Add(Item(2, moviesTwo, "B", now));
-        shows.Items.Add(Item(3, shows, "C", now));
+        moviesOne.Items.Add(item(1, moviesOne, "A", now));
+        moviesTwo.Items.Add(item(2, moviesTwo, "B", now));
+        shows.Items.Add(item(3, shows, "C", now));
 
         return new CountingRepo([moviesOne, moviesTwo, shows]);
     }
 
-    private static MediaItem Item(int id, MediaLibrary library, string title, DateTimeOffset updatedAt) => new()
+    private static MediaItem item(int id, MediaLibrary library, string title, DateTimeOffset updatedAt) => new()
     {
         Id = id,
         LibraryId = library.Id,
@@ -88,32 +88,32 @@ public class HubQueryCountTests
 
     private sealed class CountingRepo(params MediaLibrary[] libraries) : IMediaRepository
     {
-        private readonly List<MediaLibrary> _libraries = libraries.ToList();
+        private readonly List<MediaLibrary> libraries = libraries.ToList();
 
         public int PerLibraryCalls { get; private set; }
         public int BatchCalls { get; private set; }
 
         public Task<IReadOnlyList<MediaLibrary>> GetLibrariesAsync(CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaLibrary>>(_libraries);
+            => Task.FromResult<IReadOnlyList<MediaLibrary>>(libraries);
 
         public Task<MediaLibrary?> GetLibraryAsync(int id, CancellationToken ct)
-            => Task.FromResult(_libraries.FirstOrDefault(x => x.Id == id));
+            => Task.FromResult(libraries.FirstOrDefault(x => x.Id == id));
 
         public Task<IReadOnlyList<MediaItem>> GetItemsAsync(int libraryId, CancellationToken ct)
         {
             PerLibraryCalls++;
             return Task.FromResult<IReadOnlyList<MediaItem>>(
-                _libraries.Where(x => x.Id == libraryId).SelectMany(x => x.Items).ToList());
+                libraries.Where(x => x.Id == libraryId).SelectMany(x => x.Items).ToList());
         }
 
         public Task<MediaItem?> GetItemAsync(int id, CancellationToken ct)
-            => Task.FromResult(_libraries.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == id));
+            => Task.FromResult(libraries.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == id));
 
         public Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds, CancellationToken ct)
         {
             BatchCalls++;
             return Task.FromResult<IReadOnlyList<MediaItem>>(
-                _libraries.Where(x => libraryIds.Contains(x.Id))
+                libraries.Where(x => libraryIds.Contains(x.Id))
                     .OrderBy(x => x.Id)
                     .SelectMany(x => x.Items)
                     .ToList());

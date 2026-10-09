@@ -9,35 +9,35 @@ namespace PlexCompatibleServer.Infrastructure.Data;
 
 public sealed class MediaRepository : IMediaRepository
 {
-    private readonly IDbContextFactory<MediaDbContext> _factory;
-    private readonly PosterGenerator? _posterGenerator;
-    private readonly ILogger<MediaRepository> _log;
+    private readonly IDbContextFactory<MediaDbContext> factory;
+    private readonly PosterGenerator? posterGenerator;
+    private readonly ILogger<MediaRepository> log;
 
     public MediaRepository(
         IDbContextFactory<MediaDbContext> factory,
         PosterGenerator? posterGenerator = null,
         ILogger<MediaRepository>? log = null)
     {
-        _factory = factory;
-        _posterGenerator = posterGenerator;
-        _log = log ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MediaRepository>.Instance;
+        this.factory = factory;
+        this.posterGenerator = posterGenerator;
+        this.log = log ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MediaRepository>.Instance;
     }
 
     public async Task<IReadOnlyList<MediaLibrary>> GetLibrariesAsync(CancellationToken ct)
     {
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         return await db.Libraries.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct);
     }
 
     public async Task<MediaLibrary?> GetLibraryAsync(int id, CancellationToken ct)
     {
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         return await db.Libraries.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
     }
 
     public async Task<IReadOnlyList<MediaItem>> GetItemsAsync(int libraryId, CancellationToken ct)
     {
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         return await db.Items.AsNoTracking().Include(x => x.Library)
             .Where(x => x.LibraryId == libraryId)
             .OrderBy(x => x.SortTitle).ToListAsync(ct);
@@ -45,7 +45,7 @@ public sealed class MediaRepository : IMediaRepository
 
     public async Task<MediaItem?> GetItemAsync(int id, CancellationToken ct)
     {
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         return await db.Items.AsNoTracking().Include(x => x.Library)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
     }
@@ -55,7 +55,7 @@ public sealed class MediaRepository : IMediaRepository
         if (libraryIds.Count == 0) return [];
 
         var ids = libraryIds as List<int> ?? libraryIds.ToList();
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         return await db.Items.AsNoTracking().Include(x => x.Library)
             .Where(x => ids.Contains(x.LibraryId))
             .OrderBy(x => x.LibraryId).ThenBy(x => x.Id)
@@ -65,7 +65,7 @@ public sealed class MediaRepository : IMediaRepository
 
     public async Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries, CancellationToken ct)
     {
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
 
         foreach (var config in libraries)
         {
@@ -137,9 +137,9 @@ public sealed class MediaRepository : IMediaRepository
                 // Re-probe when the stream list is missing too, so a transient ffprobe failure
                 // (or an item scanned before probing existed) heals on a later scan.
                 if (wasNew || previousSize != info.Length || string.IsNullOrEmpty(item.StreamsJson))
-                    await RefreshStreamsAsync(item, ct);
+                    await refreshStreamsAsync(item, ct);
 
-                await RefreshArtworkAsync(item, info, wasNew || string.IsNullOrEmpty(item.PosterPath), ct);
+                await refreshArtworkAsync(item, info, wasNew || string.IsNullOrEmpty(item.PosterPath), ct);
             }
 
             // Rows whose file vanished (deleted or renamed) must go too - a renamed movie would
@@ -160,7 +160,7 @@ public sealed class MediaRepository : IMediaRepository
         // it would erase exactly the point we are about to resume from.
         if (timeMs <= 0) return;
 
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (item is null) return;
 
@@ -193,7 +193,7 @@ public sealed class MediaRepository : IMediaRepository
 
     public async Task MarkWatchedAsync(int id, DateTimeOffset viewedAt, CancellationToken ct)
     {
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (item is null) return;
 
@@ -216,7 +216,7 @@ public sealed class MediaRepository : IMediaRepository
 
     public async Task ClearProgressAsync(int id, CancellationToken ct)
     {
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (item is null) return;
 
@@ -230,7 +230,7 @@ public sealed class MediaRepository : IMediaRepository
 
     public async Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId, int limit, CancellationToken ct)
     {
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         var query = db.Items.AsNoTracking().Include(x => x.Library)
             .Where(x => x.ViewOffset != null && x.ViewOffset > 0
                 && x.DurationMs != null && x.DurationMs > 0
@@ -250,7 +250,7 @@ public sealed class MediaRepository : IMediaRepository
 
     public async Task DismissFromContinueWatchingAsync(int id, CancellationToken ct)
     {
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (item is null) return;
 
@@ -261,7 +261,7 @@ public sealed class MediaRepository : IMediaRepository
     public async Task SaveOfficialArtworkAsync(int id, string? posterPath, string? artPath, string? parentPosterPath,
                                                string? grandparentPosterPath, CancellationToken ct)
     {
-        await using var db = await _factory.CreateDbContextAsync(ct);
+        await using var db = await factory.CreateDbContextAsync(ct);
         var item = await db.Items.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (item is null) return;
 
@@ -277,12 +277,12 @@ public sealed class MediaRepository : IMediaRepository
     /// Reads codec/resolution detail with ffprobe. When ffprobe is unavailable the managed duration
     /// probe still leaves DurationMs populated, so the library lists correctly even without it.
     /// </summary>
-    private async Task RefreshStreamsAsync(MediaItem item, CancellationToken ct)
+    private async Task refreshStreamsAsync(MediaItem item, CancellationToken ct)
     {
         var info = await MediaStreamProbe.ProbeAsync(item.FilePath, ct);
         if (info is null || info.Width == 0)
         {
-            _log.LogWarning("ffprobe returned no data for {Path}: {Failure}",
+            log.LogWarning("ffprobe returned no data for {Path}: {Failure}",
                 item.FilePath, MediaStreamProbe.ProbeFailure);
             return;
         }
@@ -311,9 +311,9 @@ public sealed class MediaRepository : IMediaRepository
     /// artwork that exists. Artwork generation shells out to ffmpeg, so it only runs when the
     /// paths actually need rebuilding rather than on every scan.
     /// </summary>
-    private async Task RefreshArtworkAsync(MediaItem item, FileInfo info, bool stale, CancellationToken ct)
+    private async Task refreshArtworkAsync(MediaItem item, FileInfo info, bool stale, CancellationToken ct)
     {
-        if (_posterGenerator is null) return;
+        if (posterGenerator is null) return;
 
         var posterMissing = string.IsNullOrEmpty(item.PosterPath) || !File.Exists(item.PosterPath);
         var artMissing = string.IsNullOrEmpty(item.ArtPath) || !File.Exists(item.ArtPath);
@@ -324,12 +324,12 @@ public sealed class MediaRepository : IMediaRepository
 
         if (posterMissing)
         {
-            item.PosterPath = await _posterGenerator.EnsurePosterAsync(item.FilePath, item.DurationMs, ct);
+            item.PosterPath = await posterGenerator.EnsurePosterAsync(item.FilePath, item.DurationMs, ct);
         }
 
         if (artMissing)
         {
-            item.ArtPath = await _posterGenerator.EnsureArtAsync(item.FilePath, item.DurationMs, item.PosterPath, ct);
+            item.ArtPath = await posterGenerator.EnsureArtAsync(item.FilePath, item.DurationMs, item.PosterPath, ct);
         }
     }
 }
@@ -341,14 +341,14 @@ public sealed class MediaRepository : IMediaRepository
 /// </summary>
 public static class FilenameYear
 {
-    private static readonly Regex Parenthetical = new(@"\((?<year>(?:19|20)\d{2})\)", RegexOptions.Compiled);
-    private static readonly Regex Bracketed = new(@"\[(?<year>(?:19|20)\d{2})\]", RegexOptions.Compiled);
-    private static readonly Regex Loose = new(@"(?:^|[^\d])(?<year>(?:19|20)\d{2})(?:[^\d]|$)", RegexOptions.Compiled);
+    private static readonly Regex parenthetical = new(@"\((?<year>(?:19|20)\d{2})\)", RegexOptions.Compiled);
+    private static readonly Regex bracketed = new(@"\[(?<year>(?:19|20)\d{2})\]", RegexOptions.Compiled);
+    private static readonly Regex loose = new(@"(?:^|[^\d])(?<year>(?:19|20)\d{2})(?:[^\d]|$)", RegexOptions.Compiled);
 
     /// <summary>Returns the recovered year, or null when the name carries no plausible one.</summary>
     public static int? Parse(string filename)
     {
-        foreach (var pattern in new[] { Parenthetical, Bracketed, Loose })
+        foreach (var pattern in new[] { parenthetical, bracketed, loose })
         {
             var match = pattern.Match(filename);
             if (match.Success && int.TryParse(match.Groups["year"].Value, out var year))

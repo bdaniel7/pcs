@@ -29,9 +29,9 @@ public sealed class XmlSectionHubContainer
     [XmlAttribute("size")] public int Size { get; set; }
     [XmlAttribute("allowSync")] public string AllowSync { get; set; } = "1";
     [XmlAttribute("identifier")] public string Identifier { get; set; } = "com.plexapp.plugins.library";
-    [XmlAttribute("librarySectionID")] public string LibrarySectionID { get; set; } = "";
+    [XmlAttribute("librarySectionID")] public string LibrarySectionId { get; set; } = "";
     [XmlAttribute("librarySectionTitle")] public string LibrarySectionTitle { get; set; } = "";
-    [XmlAttribute("librarySectionUUID")] public string? LibrarySectionUUID { get; set; }
+    [XmlAttribute("librarySectionUUID")] public string? LibrarySectionUuid { get; set; }
 
     [XmlElement("Hub")]
     public List<XmlHub> Hubs { get; set; } = new();

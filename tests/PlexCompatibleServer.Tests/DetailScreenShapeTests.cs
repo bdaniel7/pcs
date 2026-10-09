@@ -22,26 +22,26 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class DetailScreenShapeTests
 {
-    private string _artDir = "";
+    private string artDir = "";
 
     [SetUp]
     public void SetUp()
     {
-        _artDir = Path.Combine(Path.GetTempPath(), "plex-art-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_artDir);
+        artDir = Path.Combine(Path.GetTempPath(), "plex-art-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(artDir);
     }
 
     [TearDown]
     public void TearDown()
     {
-        if (Directory.Exists(_artDir)) Directory.Delete(_artDir, recursive: true);
+        if (Directory.Exists(artDir)) Directory.Delete(artDir, recursive: true);
     }
 
     [Test]
     public async Task Related_ReturnsPopulatedMovieHub()
     {
-        var repo = BuildRepo("art.jpg", "poster.jpg");
-        var controller = WithJsonAccept(new HubController(repo, new ServerOptions(), new ExternalMetadata()));
+        var repo = buildRepo("art.jpg", "poster.jpg");
+        var controller = withJsonAccept(new HubController(repo, new ServerOptions(), new ExternalMetadata()));
 
         var result = await controller.Related(8, CancellationToken.None) as ContentResult;
         Assert.That(result, Is.Not.Null);
@@ -94,8 +94,8 @@ public class DetailScreenShapeTests
     [Test]
     public async Task Related_MoreIsEmittedAsBoolean()
     {
-        var repo = BuildRepo("art.jpg", "poster.jpg");
-        var controller = WithJsonAccept(new HubController(repo, new ServerOptions(), new ExternalMetadata()));
+        var repo = buildRepo("art.jpg", "poster.jpg");
+        var controller = withJsonAccept(new HubController(repo, new ServerOptions(), new ExternalMetadata()));
 
         var result = await controller.Related(8, CancellationToken.None) as ContentResult;
         Assert.That(result, Is.Not.Null);
@@ -108,11 +108,11 @@ public class DetailScreenShapeTests
     [Test]
     public async Task Photo_ArtUrlServesArtwork()
     {
-        var art = Path.Combine(_artDir, "art.jpg");
+        var art = Path.Combine(artDir, "art.jpg");
         File.WriteAllBytes(art, new byte[] { 1, 2, 3 });
-        var poster = Path.Combine(_artDir, "poster.jpg");
+        var poster = Path.Combine(artDir, "poster.jpg");
         File.WriteAllBytes(poster, new byte[] { 1, 2, 3 });
-        var controller = Photo(BuildRepo(art, poster));
+        var controller = photo(buildRepo(art, poster));
 
         var result = await controller.Transcode("/library/metadata/8/art/1790948816", 1232, 693, "")
             as PhysicalFileResult;
@@ -124,11 +124,11 @@ public class DetailScreenShapeTests
     [Test]
     public async Task Photo_ThumbUrlServesPoster()
     {
-        var art = Path.Combine(_artDir, "art.jpg");
+        var art = Path.Combine(artDir, "art.jpg");
         File.WriteAllBytes(art, new byte[] { 1, 2, 3 });
-        var poster = Path.Combine(_artDir, "poster.jpg");
+        var poster = Path.Combine(artDir, "poster.jpg");
         File.WriteAllBytes(poster, new byte[] { 1, 2, 3 });
-        var controller = Photo(BuildRepo(art, poster));
+        var controller = photo(buildRepo(art, poster));
 
         var result = await controller.Transcode("/library/metadata/8/thumb/1790948816", 240, 360, "")
             as PhysicalFileResult;
@@ -137,11 +137,11 @@ public class DetailScreenShapeTests
         Assert.That(result!.FileName, Is.EqualTo(poster));
     }
 
-    private PhotoController Photo(FakeRepo repo) =>
-        new(repo, new ImageTranscoder(new MediaArtOptions { CacheDirectory = _artDir },
+    private PhotoController photo(FakeRepo repo) =>
+        new(repo, new ImageTranscoder(new MediaArtOptions { CacheDirectory = artDir },
             NullLogger<ImageTranscoder>.Instance));
 
-    private static FakeRepo BuildRepo(string art, string poster)
+    private static FakeRepo buildRepo(string art, string poster)
     {
         var library = new MediaLibrary { Id = 1, Name = "Movies", Type = LibraryType.Movie };
 
@@ -162,7 +162,7 @@ public class DetailScreenShapeTests
         return new FakeRepo(library);
     }
 
-    private static T WithJsonAccept<T>(T controller) where T : ControllerBase
+    private static T withJsonAccept<T>(T controller) where T : ControllerBase
     {
         var http = new DefaultHttpContext();
         http.Request.Headers.Accept = "application/json";
@@ -172,26 +172,26 @@ public class DetailScreenShapeTests
 
     private sealed class FakeRepo : IMediaRepository
     {
-        private readonly List<MediaLibrary> _libraries;
+        private readonly List<MediaLibrary> libraries;
 
-        public FakeRepo(params MediaLibrary[] libraries) => _libraries = libraries.ToList();
+        public FakeRepo(params MediaLibrary[] libraries) => this.libraries = libraries.ToList();
 
         public Task<IReadOnlyList<MediaLibrary>> GetLibrariesAsync(CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaLibrary>>(_libraries);
+            => Task.FromResult<IReadOnlyList<MediaLibrary>>(libraries);
 
         public Task<MediaLibrary?> GetLibraryAsync(int id, CancellationToken ct)
-            => Task.FromResult(_libraries.FirstOrDefault(x => x.Id == id));
+            => Task.FromResult(libraries.FirstOrDefault(x => x.Id == id));
 
         public Task<IReadOnlyList<MediaItem>> GetItemsAsync(int libraryId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<MediaItem>>(
-                _libraries.Where(x => x.Id == libraryId).SelectMany(x => x.Items).ToList());
+                libraries.Where(x => x.Id == libraryId).SelectMany(x => x.Items).ToList());
 
         public Task<MediaItem?> GetItemAsync(int id, CancellationToken ct)
-            => Task.FromResult(_libraries.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == id));
+            => Task.FromResult(libraries.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == id));
 
         public Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<MediaItem>>(
-                _libraries.Where(x => libraryIds.Contains(x.Id))
+                libraries.Where(x => libraryIds.Contains(x.Id))
                     .OrderBy(x => x.Id)
                     .SelectMany(x => x.Items)
                     .ToList());

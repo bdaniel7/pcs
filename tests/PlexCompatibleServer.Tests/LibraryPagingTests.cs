@@ -18,10 +18,10 @@ public sealed class LibraryPagingTests
     [Test]
     public async Task All_honours_window_from_query_parameters()
     {
-        var controller = BuildController();
-        SetQuery(controller, "X-Plex-Container-Start=1&X-Plex-Container-Size=2");
+        var controller = buildController();
+        setQuery(controller, "X-Plex-Container-Start=1&X-Plex-Container-Size=2");
 
-        var container = ParseXml(await controller.All(1, CancellationToken.None));
+        var container = parseXml(await controller.All(1, CancellationToken.None));
 
         Assert.Multiple(() =>
         {
@@ -29,19 +29,19 @@ public sealed class LibraryPagingTests
             Assert.That(container.Attribute("offset")?.Value, Is.EqualTo("1"));
             Assert.That(container.Attribute("totalSize")?.Value, Is.EqualTo("5"));
         });
-        Assert.That(Titles(container), Is.EqualTo(new[] { "Movie 2", "Movie 3" }));
+        Assert.That(titles(container), Is.EqualTo(new[] { "Movie 2", "Movie 3" }));
     }
 
     [Test]
     public async Task All_honours_window_from_headers()
     {
-        var controller = BuildController();
+        var controller = buildController();
         var http = new DefaultHttpContext();
         http.Request.Headers["X-Plex-Container-Start"] = "3";
         http.Request.Headers["X-Plex-Container-Size"] = "10";
         controller.ControllerContext = new ControllerContext { HttpContext = http };
 
-        var container = ParseXml(await controller.All(1, CancellationToken.None));
+        var container = parseXml(await controller.All(1, CancellationToken.None));
 
         Assert.Multiple(() =>
         {
@@ -49,16 +49,16 @@ public sealed class LibraryPagingTests
             Assert.That(container.Attribute("offset")?.Value, Is.EqualTo("3"));
             Assert.That(container.Attribute("totalSize")?.Value, Is.EqualTo("5"));
         });
-        Assert.That(Titles(container), Is.EqualTo(new[] { "Movie 4", "Movie 5" }));
+        Assert.That(titles(container), Is.EqualTo(new[] { "Movie 4", "Movie 5" }));
     }
 
     [Test]
     public async Task All_size_zero_returns_no_items_but_states_total()
     {
-        var controller = BuildController();
-        SetQuery(controller, "X-Plex-Container-Start=0&X-Plex-Container-Size=0");
+        var controller = buildController();
+        setQuery(controller, "X-Plex-Container-Start=0&X-Plex-Container-Size=0");
 
-        var container = ParseXml(await controller.All(1, CancellationToken.None));
+        var container = parseXml(await controller.All(1, CancellationToken.None));
 
         Assert.Multiple(() =>
         {
@@ -71,15 +71,15 @@ public sealed class LibraryPagingTests
     [Test]
     public async Task All_without_window_returns_everything()
     {
-        var controller = BuildController();
+        var controller = buildController();
 
-        var container = ParseXml(await controller.All(1, CancellationToken.None));
+        var container = parseXml(await controller.All(1, CancellationToken.None));
 
         Assert.Multiple(() =>
         {
             Assert.That(container.Attribute("size")?.Value, Is.EqualTo("5"));
             Assert.That(container.Attribute("totalSize")?.Value, Is.EqualTo("5"));
-            Assert.That(Titles(container).Count, Is.EqualTo(5));
+            Assert.That(titles(container).Count, Is.EqualTo(5));
         });
     }
 
@@ -87,7 +87,7 @@ public sealed class LibraryPagingTests
     public async Task All_shows_the_cached_official_title_instead_of_the_file_name()
     {
         var metadata = new ExternalMetadata();
-        SetCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
+        setCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
         {
             ["movie2"] = new SidecarItem
             {
@@ -97,10 +97,10 @@ public sealed class LibraryPagingTests
             }
         });
 
-        var controller = BuildController(metadata);
-        var container = ParseXml(await controller.All(1, CancellationToken.None));
+        var controller = buildController(metadata);
+        var container = parseXml(await controller.All(1, CancellationToken.None));
 
-        Assert.That(Titles(container), Is.EqualTo(new[]
+        Assert.That(titles(container), Is.EqualTo(new[]
         {
             "Movie 1", "Real Movie Two", "Movie 3", "Movie 4", "Movie 5"
         }));
@@ -120,7 +120,7 @@ public sealed class LibraryPagingTests
         });
 
         var metadata = new ExternalMetadata();
-        SetCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
+        setCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
         {
             ["slowhorsess06e02daddyissues1080p"] = new SidecarItem
             {
@@ -141,7 +141,7 @@ public sealed class LibraryPagingTests
             metadata);
         controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
 
-        var container = ParseXml(await controller.All(2, CancellationToken.None));
+        var container = parseXml(await controller.All(2, CancellationToken.None));
         var video = container.Elements("Video").Single();
 
         Assert.Multiple(() =>
@@ -157,12 +157,12 @@ public sealed class LibraryPagingTests
         });
     }
 
-    private static void SetCache(ExternalMetadata metadata, ConcurrentDictionary<string, SidecarItem> cache)
+    private static void setCache(ExternalMetadata metadata, ConcurrentDictionary<string, SidecarItem> cache)
         => typeof(SidecarStore)
             .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(metadata.Store, cache);
 
-    private static LibraryController BuildController(ExternalMetadata? metadata = null)
+    private static LibraryController buildController(ExternalMetadata? metadata = null)
     {
         var library = new MediaLibrary { Id = 1, Name = "Movies", Type = LibraryType.Movie };
         for (var id = 1; id <= 5; id++)
@@ -187,41 +187,41 @@ public sealed class LibraryPagingTests
         return controller;
     }
 
-    private static void SetQuery(LibraryController controller, string query)
+    private static void setQuery(LibraryController controller, string query)
         => controller.HttpContext.Request.QueryString = new QueryString($"?{query}");
 
-    private static XElement ParseXml(IActionResult result)
+    private static XElement parseXml(IActionResult result)
     {
         var content = result as ContentResult;
         Assert.That(content, Is.Not.Null);
         return XDocument.Parse(content!.Content!).Root!;
     }
 
-    private static List<string?> Titles(XElement container)
+    private static List<string?> titles(XElement container)
         => container.Elements("Video").Select(x => (string?)x.Attribute("title")).ToList();
 
     private sealed class FakeRepo : IMediaRepository
     {
-        private readonly List<MediaLibrary> _libraries;
+        private readonly List<MediaLibrary> libraries;
 
-        public FakeRepo(params MediaLibrary[] libraries) => _libraries = libraries.ToList();
+        public FakeRepo(params MediaLibrary[] libraries) => this.libraries = libraries.ToList();
 
         public Task<IReadOnlyList<MediaLibrary>> GetLibrariesAsync(CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaLibrary>>(_libraries);
+            => Task.FromResult<IReadOnlyList<MediaLibrary>>(libraries);
 
         public Task<MediaLibrary?> GetLibraryAsync(int id, CancellationToken ct)
-            => Task.FromResult(_libraries.FirstOrDefault(x => x.Id == id));
+            => Task.FromResult(libraries.FirstOrDefault(x => x.Id == id));
 
         public Task<IReadOnlyList<MediaItem>> GetItemsAsync(int libraryId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<MediaItem>>(
-                _libraries.Where(x => x.Id == libraryId).SelectMany(x => x.Items).ToList());
+                libraries.Where(x => x.Id == libraryId).SelectMany(x => x.Items).ToList());
 
         public Task<MediaItem?> GetItemAsync(int id, CancellationToken ct)
-            => Task.FromResult(_libraries.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == id));
+            => Task.FromResult(libraries.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == id));
 
         public Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<MediaItem>>(
-                _libraries.Where(x => libraryIds.Contains(x.Id))
+                libraries.Where(x => libraryIds.Contains(x.Id))
                     .OrderBy(x => x.Id)
                     .SelectMany(x => x.Items)
                     .ToList());

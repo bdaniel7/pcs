@@ -52,7 +52,7 @@ public static class EmbeddedSubtitles
             return null;
         }
 
-        var key = CacheKey(videoPath, info.Length, info.LastWriteTimeUtc.Ticks, trackPosition);
+        var key = cacheKey(videoPath, info.Length, info.LastWriteTimeUtc.Ticks, trackPosition);
         Directory.CreateDirectory(CacheDirectory);
         var finalPath = Path.Combine(CacheDirectory, key + ".srt");
         if (File.Exists(finalPath))
@@ -96,7 +96,7 @@ public static class EmbeddedSubtitles
             }
             catch (OperationCanceledException)
             {
-                TryKill(process);
+                tryKill(process);
                 return null;
             }
 
@@ -125,14 +125,14 @@ public static class EmbeddedSubtitles
         }
     }
 
-    private static string CacheKey(string path, long length, long mtimeTicks, int trackPosition)
+    private static string cacheKey(string path, long length, long mtimeTicks, int trackPosition)
     {
         var material = Encoding.UTF8.GetBytes(
             FormattableString.Invariant($"{path}|{length}|{mtimeTicks}|{trackPosition}"));
         return Convert.ToHexString(SHA256.HashData(material))[..24];
     }
 
-    private static void TryKill(Process process)
+    private static void tryKill(Process process)
     {
         try
         {

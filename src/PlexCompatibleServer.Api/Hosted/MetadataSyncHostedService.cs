@@ -8,32 +8,32 @@ namespace PlexCompatibleServer.Api.Hosted;
 /// </summary>
 public sealed class MetadataSyncHostedService : BackgroundService
 {
-    private readonly MetadataSyncTrigger _trigger;
-    private readonly MetadataSyncService _sync;
-    private readonly ILogger<MetadataSyncHostedService> _logger;
+    private readonly MetadataSyncTrigger trigger;
+    private readonly MetadataSyncService sync;
+    private readonly ILogger<MetadataSyncHostedService> logger;
 
     public MetadataSyncHostedService(
         MetadataSyncTrigger trigger,
         MetadataSyncService sync,
         ILogger<MetadataSyncHostedService> logger)
     {
-        _trigger = trigger;
-        _sync = sync;
-        _logger = logger;
+        this.trigger = trigger;
+        this.sync = sync;
+        this.logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var reason in _trigger.Requests.ReadAllAsync(stoppingToken))
+        await foreach (var reason in trigger.Requests.ReadAllAsync(stoppingToken))
         {
             try
             {
-                await _sync.RunAsync(stoppingToken);
+                await sync.RunAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Metadata sync failed ({Reason}).", reason);
+                logger.LogError(ex, "Metadata sync failed ({Reason}).", reason);
             }
         }
     }

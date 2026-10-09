@@ -17,27 +17,27 @@ namespace PlexCompatibleServer.Api;
 /// </summary>
 public sealed class MetadataSyncService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ILogger<MetadataSyncService> _logger;
-    private readonly RemoteArtworkCache _artwork;
-    private readonly IMetadataService _metadata;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly IServiceScopeFactory scopeFactory;
+    private readonly ILogger<MetadataSyncService> logger;
+    private readonly RemoteArtworkCache artwork;
+    private readonly IMetadataService metadata;
+    private readonly SemaphoreSlim gate = new(1, 1);
 
     public MetadataSyncService(IServiceScopeFactory scopeFactory, ILogger<MetadataSyncService> logger,
                                RemoteArtworkCache artwork, IMetadataService metadata)
     {
-        _scopeFactory = scopeFactory;
-        _logger = logger;
-        _artwork = artwork;
-        _metadata = metadata;
+        this.scopeFactory = scopeFactory;
+        this.logger = logger;
+        this.artwork = artwork;
+        this.metadata = metadata;
     }
 
     public async Task<BackfillResult> RunAsync(CancellationToken ct)
     {
-        await _gate.WaitAsync(ct);
+        await gate.WaitAsync(ct);
         try
         {
-            using var scope = _scopeFactory.CreateScope();
+            using var scope = scopeFactory.CreateScope();
             var repo = scope.ServiceProvider.GetRequiredService<IMediaRepository>();
             var libraries = await repo.GetLibrariesAsync(ct);
 
@@ -45,19 +45,19 @@ public sealed class MetadataSyncService
             foreach (var library in libraries)
                 items.AddRange(await repo.GetItemsAsync(library.Id, ct));
 
-            var result = await _metadata.BackfillAsync(items, ct);
-            _logger.LogInformation(
+            var result = await metadata.BackfillAsync(items, ct);
+            logger.LogInformation(
                 "Metadata sync finished: {Scanned} scanned, {Present} present, {Created} created, {Enriched} enriched, {Failed} failed.",
                 result.Scanned, result.Present, result.Created, result.Enriched, result.Failed.Count);
             if (result.Failed.Count > 0)
-                _logger.LogDebug("Metadata sync unmatched: {Titles}.", string.Join("; ", result.Failed));
+                logger.LogDebug("Metadata sync unmatched: {Titles}.", string.Join("; ", result.Failed));
 
-            await SyncOfficialArtworkAsync(items, repo, ct);
+            await syncOfficialArtworkAsync(items, repo, ct);
             return result;
         }
         finally
         {
-            _gate.Release();
+            gate.Release();
         }
     }
 
@@ -67,7 +67,7 @@ public sealed class MetadataSyncService
     /// vanished), so repeat syncs do no network work; a missing record or a record without
     /// URLs is simply not downloadable yet.
     /// </summary>
-    private async Task SyncOfficialArtworkAsync(IReadOnlyList<MediaItem> items,
+    private async Task syncOfficialArtworkAsync(IReadOnlyList<MediaItem> items,
                                                 IMediaRepository repo, CancellationToken ct)
     {
         var stats = new ArtworkStats();
@@ -75,7 +75,7 @@ public sealed class MetadataSyncService
         foreach (var item in items)
         {
             ct.ThrowIfCancellationRequested();
-            if (!_metadata.TryGetRecord(item, out var rec)) continue;
+            if (!metadata.TryGetRecord(item, out var rec)) continue;
 
             string? poster = null;
             string? art = null;
@@ -84,13 +84,13 @@ public sealed class MetadataSyncService
 
             if (item.Library is { Type: LibraryType.Movie })
             {
-                poster = await ResolveAsync(rec.ThumbUrl, item.OfficialPosterPath, stats, ct);
-                art = await ResolveAsync(rec.ArtUrl, item.OfficialArtPath, stats, ct);
+                poster = await resolveAsync(rec.ThumbUrl, item.OfficialPosterPath, stats, ct);
+                art = await resolveAsync(rec.ArtUrl, item.OfficialArtPath, stats, ct);
             }
             else if (item.Library is { Type: LibraryType.Show })
             {
-                parent = await ResolveAsync(rec.ParentThumbUrl, item.OfficialParentPosterPath, stats, ct);
-                grandparent = await ResolveAsync(rec.GrandparentThumbUrl, item.OfficialGrandparentPosterPath, stats, ct);
+                parent = await resolveAsync(rec.ParentThumbUrl, item.OfficialParentPosterPath, stats, ct);
+                grandparent = await resolveAsync(rec.GrandparentThumbUrl, item.OfficialGrandparentPosterPath, stats, ct);
             }
             else
             {
@@ -103,7 +103,7 @@ public sealed class MetadataSyncService
         }
 
         if (stats.Downloaded + stats.Failed > 0 || stats.Cached > 0)
-            _logger.LogInformation(
+            logger.LogInformation(
                 "Artwork sync finished: {Downloaded} downloaded, {Cached} already cached, {Failed} failed.",
                 stats.Downloaded, stats.Cached, stats.Failed);
     }
@@ -119,7 +119,7 @@ public sealed class MetadataSyncService
     /// Path to store for the URL: null keeps whatever the item already has - either because the
     /// column is filled and the file is still on disk, or because there is nothing to fetch.
     /// </summary>
-    private async Task<string?> ResolveAsync(string? url, string? currentPath,
+    private async Task<string?> resolveAsync(string? url, string? currentPath,
                                              ArtworkStats stats, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(url)) return null;
@@ -131,7 +131,7 @@ public sealed class MetadataSyncService
             return null;
         }
 
-        var path = await _artwork.EnsureAsync(url, ct);
+        var path = await artwork.EnsureAsync(url, ct);
 
         if (path is null)
         {

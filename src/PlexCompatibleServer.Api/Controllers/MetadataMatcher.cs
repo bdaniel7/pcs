@@ -10,11 +10,11 @@ namespace PlexCompatibleServer.Api.Controllers;
 /// </summary>
 internal sealed class MetadataMatcher
 {
-    private readonly SidecarStore _store;
+    private readonly SidecarStore store;
 
     internal MetadataMatcher(SidecarStore store)
     {
-        _store = store;
+        this.store = store;
     }
 
     /// <summary>
@@ -34,12 +34,12 @@ internal sealed class MetadataMatcher
         // plex.tv lookup instead.
         var isEpisode = item.Library is { Type: LibraryType.Show };
 
-        var rec = _store.Get(key);
+        var rec = store.Get(key);
 
         if (rec is null)
         {
-            rec ??= _store.Get(title ?? string.Empty);
-            rec ??= _store.Get(title?.ToLowerInvariant() ?? string.Empty);
+            rec ??= store.Get(title ?? string.Empty);
+            rec ??= store.Get(title?.ToLowerInvariant() ?? string.Empty);
         }
 
         {
@@ -66,22 +66,22 @@ internal sealed class MetadataMatcher
                 if (hit) baseName = Path.GetFileNameWithoutExtension(baseName);
                 else break;
             }
-            rec ??= _store.Get(KeyOfShort(baseName));
-            rec ??= _store.Get(KeyOf(baseName));
+            rec ??= store.Get(keyOfShort(baseName));
+            rec ??= store.Get(keyOf(baseName));
             var loose = System.Text.RegularExpressions.Regex.Replace(baseName.ToLowerInvariant(), "[^a-z0-9]+", "");
-            rec ??= _store.Get(loose);
+            rec ??= store.Get(loose);
 
             if (!isEpisode)
             {
-                rec ??= _store.GetFuzzy(baseName);
-                rec ??= _store.GetFuzzy(item.FilePath);
+                rec ??= store.GetFuzzy(baseName);
+                rec ??= store.GetFuzzy(item.FilePath);
 
                 if (rec is null && !string.IsNullOrEmpty(item.FilePath))
                 {
                     try
                     {
-                        rec ??= _store.GetFuzzy(Path.GetDirectoryName(item.FilePath) ?? string.Empty);
-                        rec ??= _store.GetFuzzy(Path.Combine(Path.GetDirectoryName(item.FilePath) ?? string.Empty, baseName));
+                        rec ??= store.GetFuzzy(Path.GetDirectoryName(item.FilePath) ?? string.Empty);
+                        rec ??= store.GetFuzzy(Path.Combine(Path.GetDirectoryName(item.FilePath) ?? string.Empty, baseName));
                     }
                     catch { }
                 }
@@ -90,8 +90,8 @@ internal sealed class MetadataMatcher
 
         if (rec is null && !isEpisode)
         {
-            rec ??= _store.GetFuzzy(title ?? string.Empty);
-            rec ??= _store.GetFuzzy(titleSort ?? string.Empty);
+            rec ??= store.GetFuzzy(title ?? string.Empty);
+            rec ??= store.GetFuzzy(titleSort ?? string.Empty);
         }
 
         return rec;
@@ -112,7 +112,7 @@ internal sealed class MetadataMatcher
     {
         var key = GetKey(item);
 
-        if (!string.IsNullOrEmpty(key) && _store.Get(key) is { } byKey)
+        if (!string.IsNullOrEmpty(key) && store.Get(key) is { } byKey)
         {
             record = byKey;
 
@@ -122,14 +122,14 @@ internal sealed class MetadataMatcher
 
         if (title.Length > 0)
         {
-            if (_store.Get(title) is { } byTitle)
+            if (store.Get(title) is { } byTitle)
             {
                 record = byTitle;
 
                 return true;
             }
 
-            if (_store.Get(title.ToLowerInvariant()) is { } byLower)
+            if (store.Get(title.ToLowerInvariant()) is { } byLower)
             {
                 record = byLower;
 
@@ -137,7 +137,7 @@ internal sealed class MetadataMatcher
             }
         }
 
-        if (item.Library is not { Type: LibraryType.Show } && _store.GetFuzzy(title) is { } fuzzy)
+        if (item.Library is not { Type: LibraryType.Show } && store.GetFuzzy(title) is { } fuzzy)
         {
             record = fuzzy;
 
@@ -172,10 +172,10 @@ internal sealed class MetadataMatcher
             break;
         }
 
-        return KeyOf(baseName);
+        return keyOf(baseName);
     }
 
-    private static string KeyOf(string stem)
+    private static string keyOf(string stem)
     {
         var s = (stem).ToLowerInvariant();
         var sb = new StringBuilder(s.Length);
@@ -188,7 +188,7 @@ internal sealed class MetadataMatcher
         return sb.ToString();
     }
 
-    private static string KeyOfShort(string stem)
+    private static string keyOfShort(string stem)
     {
         // Work with just the filename to match sidecar keys derived from media basenames
         if (!string.IsNullOrEmpty(stem))
@@ -229,7 +229,7 @@ internal sealed class MetadataMatcher
     /// Binding key for a show name with any year removed: "Dark Matter 2024" (from a dated
     /// filename) and "Dark Matter" (from its titleless siblings) must address the same binding.
     /// </summary>
-    internal static string ShowBindingKey(string showName) => KeyOf(StripYearTokens(showName));
+    internal static string ShowBindingKey(string showName) => keyOf(StripYearTokens(showName));
 
     internal static string StripYearTokens(string showName) =>
         System.Text.RegularExpressions.Regex.Replace(showName, @"\b(?:19|20)\d{2}\b", " ").Trim();

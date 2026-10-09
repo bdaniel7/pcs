@@ -16,15 +16,15 @@ namespace PlexCompatibleServer.Infrastructure.Media;
 /// </summary>
 public sealed class ImageTranscoder
 {
-    private readonly MediaArtOptions _options;
-    private readonly ILogger<ImageTranscoder> _log;
-    private readonly SemaphoreSlim _throttle;
+    private readonly MediaArtOptions options;
+    private readonly ILogger<ImageTranscoder> log;
+    private readonly SemaphoreSlim throttle;
 
     public ImageTranscoder(MediaArtOptions options, ILogger<ImageTranscoder> log)
     {
-        _options = options;
-        _log = log;
-        _throttle = new SemaphoreSlim(Math.Max(1, options.MaxConcurrency));
+        this.options = options;
+        this.log = log;
+        throttle = new SemaphoreSlim(Math.Max(1, options.MaxConcurrency));
     }
 
     /// <summary>
@@ -47,35 +47,35 @@ public sealed class ImageTranscoder
         var extension = Path.GetExtension(sourcePath).Equals(".png", StringComparison.OrdinalIgnoreCase)
             ? ".png"
             : ".jpg";
-        var output = Path.Combine(CacheDirectory,
+        var output = Path.Combine(cacheDirectory,
             $"{SourceKey(sourcePath)}-{targetWidth}x{targetHeight}{extension}");
 
-        if (HasContent(output)) return output;
+        if (hasContent(output)) return output;
 
         var ffmpeg = FfmpegLocator.Executable;
         if (string.IsNullOrEmpty(ffmpeg)) return sourcePath;
 
-        await _throttle.WaitAsync(ct);
+        await throttle.WaitAsync(ct);
         try
         {
-            if (HasContent(output)) return output;
+            if (hasContent(output)) return output;
 
-            Directory.CreateDirectory(CacheDirectory);
-            var tmp = Path.Combine(CacheDirectory, $".transcode.{Guid.NewGuid():N}.tmp{extension}");
+            Directory.CreateDirectory(cacheDirectory);
+            var tmp = Path.Combine(cacheDirectory, $".transcode.{Guid.NewGuid():N}.tmp{extension}");
 
-            var ok = await RunAsync(ffmpeg, BuildArgs(sourcePath, tmp, targetWidth, targetHeight, extension), ct);
-            if (ok && HasContent(tmp))
+            var ok = await runAsync(ffmpeg, buildArgs(sourcePath, tmp, targetWidth, targetHeight, extension), ct);
+            if (ok && hasContent(tmp))
             {
                 File.Move(tmp, output, overwrite: true);
                 return output;
             }
 
-            TryDelete(tmp);
+            tryDelete(tmp);
             return sourcePath;
         }
         finally
         {
-            _throttle.Release();
+            throttle.Release();
         }
     }
 
@@ -101,12 +101,12 @@ public sealed class ImageTranscoder
             .Substring(0, 16).ToLowerInvariant();
     }
 
-    private string CacheDirectory =>
-        string.IsNullOrEmpty(_options.CacheDirectory)
+    private string cacheDirectory =>
+        string.IsNullOrEmpty(options.CacheDirectory)
             ? MediaArtOptions.DefaultCacheDirectory
-            : _options.CacheDirectory;
+            : options.CacheDirectory;
 
-    private static string[] BuildArgs(string source, string output, int width, int height, string extension)
+    private static string[] buildArgs(string source, string output, int width, int height, string extension)
     {
         var args = new List<string>
         {
@@ -122,9 +122,9 @@ public sealed class ImageTranscoder
         return [.. args];
     }
 
-    private static bool HasContent(string path) => File.Exists(path) && new FileInfo(path).Length > 0;
+    private static bool hasContent(string path) => File.Exists(path) && new FileInfo(path).Length > 0;
 
-    private async Task<bool> RunAsync(string ffmpeg, IReadOnlyList<string> args, CancellationToken ct)
+    private async Task<bool> runAsync(string ffmpeg, IReadOnlyList<string> args, CancellationToken ct)
     {
         var info = new ProcessStartInfo(ffmpeg)
         {
@@ -154,31 +154,31 @@ public sealed class ImageTranscoder
             await drained;
 
             if (process.ExitCode != 0)
-                _log.LogDebug("ffmpeg exited {Code} resizing {Source}", process.ExitCode, args[1]);
+                log.LogDebug("ffmpeg exited {Code} resizing {Source}", process.ExitCode, args[1]);
 
             return process.ExitCode == 0;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            _log.LogWarning("Timed out resizing {Source}", args[1]);
-            TryKill(process);
+            log.LogWarning("Timed out resizing {Source}", args[1]);
+            tryKill(process);
             return false;
         }
         catch (Exception ex)
         {
-            _log.LogWarning(ex, "Resize failed for {Source}", args[1]);
-            TryKill(process);
+            log.LogWarning(ex, "Resize failed for {Source}", args[1]);
+            tryKill(process);
             return false;
         }
     }
 
-    private static void TryKill(Process? process)
+    private static void tryKill(Process? process)
     {
         try { if (process is { HasExited: false }) process.Kill(entireProcessTree: true); }
         catch { /* best effort */ }
     }
 
-    private static void TryDelete(string path)
+    private static void tryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
         catch { /* best effort */ }

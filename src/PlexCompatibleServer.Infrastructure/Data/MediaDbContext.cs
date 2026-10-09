@@ -85,9 +85,9 @@ public sealed class MediaDbContext : DbContext
 
         foreach (var (table, column, definition) in additive)
         {
-            EnsureSafeIdentifier(table, "table");
-            EnsureSafeIdentifier(column, "column");
-            if (await HasColumnAsync(table, column, ct)) continue;
+            ensureSafeIdentifier(table, "table");
+            ensureSafeIdentifier(column, "column");
+            if (await hasColumnAsync(table, column, ct)) continue;
 
             // The statement is assembled from the fixed additive list above - table, column and
             // definition are never user input - which EF1002 cannot prove about interpolation.
@@ -111,7 +111,7 @@ public sealed class MediaDbContext : DbContext
         }
     }
 
-    private async Task<bool> HasColumnAsync(string table, string column, CancellationToken ct)
+    private async Task<bool> hasColumnAsync(string table, string column, CancellationToken ct)
     {
         var connection = Database.GetDbConnection();
         var shouldClose = connection.State != System.Data.ConnectionState.Open;
@@ -145,7 +145,7 @@ public sealed class MediaDbContext : DbContext
     /// Guards the only place raw SQL is assembled from identifiers. The additive list is fixed, but
     /// this makes it impossible for a future change to interpolate an unvalidated table/column.
     /// </summary>
-    private static void EnsureSafeIdentifier(string identifier, string kind)
+    private static void ensureSafeIdentifier(string identifier, string kind)
     {
         var inner = identifier.StartsWith('[') && identifier.EndsWith(']')
             ? identifier[1..^1]

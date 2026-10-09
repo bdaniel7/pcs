@@ -12,11 +12,11 @@ namespace PlexCompatibleServer.Api.Controllers;
 /// </summary>
 internal sealed class SidecarStore
 {
-    private const string SidecarPath = "wwwroot/plex-metadata.json";
-    private const string LookupCacheFileName = "plex-lookup-cache.json";
-    private const string ShowBindingsFileName = "plex-show-bindings.json";
+    const string SIDECAR_PATH = "wwwroot/plex-metadata.json";
+    const string LOOKUP_CACHE_FILE_NAME = "plex-lookup-cache.json";
+    const string SHOW_BINDINGS_FILE_NAME = "plex-show-bindings.json";
 
-    private readonly object _cacheLock = new();
+    readonly object cacheLock = new();
 
     /// <summary>
     /// Content root of the running app. Dev runs from the project directory while binaries land in
@@ -45,28 +45,28 @@ internal sealed class SidecarStore
                                                                                   }
     };
 
-    private ConcurrentDictionary<string, SidecarItem>? _cache;
-    private int _cacheVersion;
-    private FuzzyIndex? _fuzzyIndex;
-    private int _fuzzyIndexVersion = -1;
-    private Dictionary<string, SidecarItem>? _lookupCache;
-    private Dictionary<string, SidecarItem>? _showBindings;
+    ConcurrentDictionary<string, SidecarItem>? cache;
+    int cacheVersion;
+    FuzzyIndex? fuzzyIndex;
+    int fuzzyIndexVersion = -1;
+    Dictionary<string, SidecarItem>? lookupCache;
+    Dictionary<string, SidecarItem>? showBindings;
 
     internal SidecarItem? Get(string key)
     {
-        var cache = _cache;
+        var cache = this.cache;
 
         if (cache is null)
         {
-            var path = ResolveSidecarPath();
+            var path = resolveSidecarPath();
 
             var loaded = path is not null
                              ? JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(File.ReadAllText(path), Options)
                              : null;
             cache = new ConcurrentDictionary<string, SidecarItem>(loaded ?? new(), StringComparer.Ordinal);
-            foreach (var kv in LoadLookupCache()) cache[kv.Key] = kv.Value;
-            _cache = cache;
-            _cacheVersion++;
+            foreach (var kv in loadLookupCache()) cache[kv.Key] = kv.Value;
+            this.cache = cache;
+            cacheVersion++;
         }
 
         if (cache!.TryGetValue(key, out var v)) return v;
@@ -84,18 +84,18 @@ internal sealed class SidecarStore
 
     internal SidecarItem? GetFuzzy(string filename)
     {
-        var cache = _cache;
+        var cache = this.cache;
 
         if (cache is null || string.IsNullOrEmpty(filename)) return null;
 
-        var index = GetFuzzyIndex(cache);
+        var index = getFuzzyIndex(cache);
         var fn = filename.ToLowerInvariant();
 
         // Exact stem hit is the common case (the file names its own sidecar): answer with one probe
         // before touching the precomputed entry list.
         if (index.ByStem.TryGetValue(fn, out var exact)) return exact;
 
-        var fnorm = NormalizeFuzzy(fn);
+        var fnorm = normalizeFuzzy(fn);
 
         foreach (var entry in index.Entries)
         {
@@ -123,26 +123,26 @@ internal sealed class SidecarStore
     /// the sidecar; doing so per lookup would re-normalize every title on every row of a library
     /// page (an O(n^2) walk). The index is reused until the cache is loaded or a record is written.
     /// </summary>
-    private FuzzyIndex GetFuzzyIndex(ConcurrentDictionary<string, SidecarItem> cache)
+    FuzzyIndex getFuzzyIndex(ConcurrentDictionary<string, SidecarItem> cache)
     {
-        var index = _fuzzyIndex;
-        if (index is not null && _fuzzyIndexVersion == _cacheVersion && ReferenceEquals(index.Cache, cache))
+        var index = fuzzyIndex;
+        if (index is not null && fuzzyIndexVersion == cacheVersion && ReferenceEquals(index.Cache, cache))
             return index;
 
-        lock (_cacheLock)
+        lock (cacheLock)
         {
-            index = _fuzzyIndex;
-            if (index is not null && _fuzzyIndexVersion == _cacheVersion && ReferenceEquals(index.Cache, cache))
+            index = fuzzyIndex;
+            if (index is not null && fuzzyIndexVersion == cacheVersion && ReferenceEquals(index.Cache, cache))
                 return index;
 
             index = FuzzyIndex.Build(cache);
-            _fuzzyIndex = index;
-            _fuzzyIndexVersion = _cacheVersion;
+            fuzzyIndex = index;
+            fuzzyIndexVersion = cacheVersion;
             return index;
         }
     }
 
-    private static string NormalizeFuzzy(string value) =>
+    static string normalizeFuzzy(string value) =>
         System.Text.RegularExpressions.Regex.Replace(value, "[^a-z0-9]+", "");
 
     /// <summary>
@@ -150,11 +150,11 @@ internal sealed class SidecarStore
     /// containment checks) and the stripped-alphanumeric title (so the query only pays for one
     /// normalization, not one per record).
     /// </summary>
-    private sealed class FuzzyIndex
+    sealed class FuzzyIndex
     {
-        private FuzzyIndex(ConcurrentDictionary<string, SidecarItem> cache,
-                           Dictionary<string, SidecarItem> byStem,
-                           Entry[] entries)
+        FuzzyIndex(ConcurrentDictionary<string, SidecarItem> cache,
+                   Dictionary<string, SidecarItem> byStem,
+                   Entry[] entries)
         {
             Cache = cache;
             ByStem = byStem;
@@ -174,7 +174,7 @@ internal sealed class SidecarStore
             foreach (var pair in cache)
             {
                 var stem = (pair.Value.FileStem ?? pair.Key ?? string.Empty).ToLowerInvariant();
-                var titleNorm = NormalizeFuzzy((pair.Value.Title ?? string.Empty).ToLowerInvariant());
+                var titleNorm = normalizeFuzzy((pair.Value.Title ?? string.Empty).ToLowerInvariant());
                 entries[i++] = new Entry(stem, titleNorm, pair.Value);
 
                 if (stem.Length > 0 && !byStem.ContainsKey(stem)) byStem[stem] = pair.Value;
@@ -186,7 +186,7 @@ internal sealed class SidecarStore
         public readonly record struct Entry(string Stem, string TitleNorm, SidecarItem Record);
     }
 
-    private string? ResolveSidecarPath()
+    string? resolveSidecarPath()
     {
         if (ContentRoot is not null)
         {
@@ -201,30 +201,30 @@ internal sealed class SidecarStore
 
         if (File.Exists(path)) return path;
 
-        return File.Exists(SidecarPath) ? Path.GetFullPath(SidecarPath) : null;
+        return File.Exists(SIDECAR_PATH) ? Path.GetFullPath(SIDECAR_PATH) : null;
     }
 
-    private string PreferredSidecarPath() =>
+    string preferredSidecarPath() =>
         ContentRoot is not null
             ? Path.Combine(ContentRoot, "wwwroot", "plex-metadata.json")
             : Path.Combine(AppContext.BaseDirectory, "wwwroot", "plex-metadata.json");
 
-    private string LookupCachePath()
+    string lookupCachePath()
     {
-        var sidecar = ResolveSidecarPath();
+        var sidecar = resolveSidecarPath();
 
         var dir = sidecar is not null
                       ? Path.GetDirectoryName(sidecar)!
-                      : Path.GetDirectoryName(PreferredSidecarPath())!;
+                      : Path.GetDirectoryName(preferredSidecarPath())!;
 
-        return Path.Combine(dir, LookupCacheFileName);
+        return Path.Combine(dir, LOOKUP_CACHE_FILE_NAME);
     }
 
-    private Dictionary<string, SidecarItem> LoadLookupCache()
+    Dictionary<string, SidecarItem> loadLookupCache()
     {
         try
         {
-            var path = LookupCachePath();
+            var path = lookupCachePath();
 
             if (!File.Exists(path)) return new Dictionary<string, SidecarItem>();
 
@@ -240,36 +240,36 @@ internal sealed class SidecarStore
     internal void PersistLookup(string key,
                                 SidecarItem rec)
     {
-        lock (_cacheLock)
+        lock (cacheLock)
         {
-            _lookupCache ??= LoadLookupCache();
-            _lookupCache[key] = rec;
+            lookupCache ??= loadLookupCache();
+            lookupCache[key] = rec;
 
             try
             {
-                var path = LookupCachePath();
+                var path = lookupCachePath();
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var tmp = path + ".tmp";
-                File.WriteAllText(tmp, JsonSerializer.Serialize(_lookupCache, Options));
+                File.WriteAllText(tmp, JsonSerializer.Serialize(lookupCache, Options));
                 File.Move(tmp, path, true);
             }
             catch
             {
                 // A failed cache write must not fail the response; the lookup still serves this request.
             }
-            if (_cache is not null)
+            if (cache is not null)
             {
-                _cache[key] = rec;
-                _cacheVersion++;
+                cache[key] = rec;
+                cacheVersion++;
             }
         }
     }
 
-    private Dictionary<string, SidecarItem> LoadShowBindings()
+    Dictionary<string, SidecarItem> loadShowBindings()
     {
         try
         {
-            var path = Path.Combine(Path.GetDirectoryName(LookupCachePath())!, ShowBindingsFileName);
+            var path = Path.Combine(Path.GetDirectoryName(lookupCachePath())!, SHOW_BINDINGS_FILE_NAME);
 
             if (!File.Exists(path)) return new Dictionary<string, SidecarItem>();
 
@@ -284,28 +284,28 @@ internal sealed class SidecarStore
 
     internal SidecarItem? GetShowBinding(string key)
     {
-        lock (_cacheLock)
+        lock (cacheLock)
         {
-            _showBindings ??= LoadShowBindings();
+            showBindings ??= loadShowBindings();
 
-            return _showBindings.TryGetValue(key, out var show) ? show : null;
+            return showBindings.TryGetValue(key, out var show) ? show : null;
         }
     }
 
     internal void SaveShowBinding(string key,
                                   SidecarItem show)
     {
-        lock (_cacheLock)
+        lock (cacheLock)
         {
-            _showBindings ??= LoadShowBindings();
-            _showBindings[key] = show;
+            showBindings ??= loadShowBindings();
+            showBindings[key] = show;
 
             try
             {
-                var path = Path.Combine(Path.GetDirectoryName(LookupCachePath())!, ShowBindingsFileName);
+                var path = Path.Combine(Path.GetDirectoryName(lookupCachePath())!, SHOW_BINDINGS_FILE_NAME);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var tmp = path + ".tmp";
-                File.WriteAllText(tmp, JsonSerializer.Serialize(_showBindings, Options));
+                File.WriteAllText(tmp, JsonSerializer.Serialize(showBindings, Options));
                 File.Move(tmp, path, true);
             }
             catch
@@ -322,9 +322,9 @@ internal sealed class SidecarStore
     internal void UpsertSidecar(string key,
                                 SidecarItem rec)
     {
-        lock (_cacheLock)
+        lock (cacheLock)
         {
-            var path = ResolveSidecarPath() ?? PreferredSidecarPath();
+            var path = resolveSidecarPath() ?? preferredSidecarPath();
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var dict = new Dictionary<string, SidecarItem>(StringComparer.Ordinal);
 
@@ -340,10 +340,10 @@ internal sealed class SidecarStore
             var tmp = path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(dict, writeOptions));
             File.Move(tmp, path, true);
-            if (_cache is not null)
+            if (cache is not null)
             {
-                _cache[key] = rec;
-                _cacheVersion++;
+                cache[key] = rec;
+                cacheVersion++;
             }
         }
     }

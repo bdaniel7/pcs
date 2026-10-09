@@ -75,7 +75,7 @@ internal static class MetadataParity
             video.OriginallyAvailableAt = $"{video.Year}-01-01";
         }
 
-        SeedUnknownTags(video, ratingKey);
+        seedUnknownTags(video, ratingKey);
     }
 
     /// <summary>
@@ -93,7 +93,7 @@ internal static class MetadataParity
     /// Ids are derived from the item's rating key so a given entry keeps the same id across
     /// responses, matching the way official Plex numbers its tags.
     /// </summary>
-    private static void SeedUnknownTags(XmlVideo video, int ratingKey)
+    private static void seedUnknownTags(XmlVideo video, int ratingKey)
     {
         XmlTag Seed(int offset, string filterName) => new()
         {

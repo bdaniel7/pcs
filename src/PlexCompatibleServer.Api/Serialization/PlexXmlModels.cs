@@ -43,7 +43,7 @@ public sealed class XmlServerInfo
     [XmlAttribute("pluginHost")] public string PluginHost { get; set; } = "";
     [XmlAttribute("pushNotifications")] public string PushNotifications { get; set; } = "";
     [XmlAttribute("readOnlyLibraries")] public string ReadOnlyLibraries { get; set; } = "";
-    [XmlAttribute("streamingBrainABRVersion")] public string StreamingBrainABRVersion { get; set; } = "";
+    [XmlAttribute("streamingBrainABRVersion")] public string StreamingBrainAbrVersion { get; set; } = "";
     [XmlAttribute("streamingBrainVersion")] public string StreamingBrainVersion { get; set; } = "";
     [XmlAttribute("sync")] public string Sync { get; set; } = "";
     [XmlAttribute("transcoderActiveVideoSessions")] public string TranscoderActiveVideoSessions { get; set; } = "";
@@ -86,9 +86,9 @@ public sealed class XmlMediaContainer
     [XmlAttribute("identifier")] public string Identifier { get; set; } = "";
     [XmlAttribute("title1")] public string Title1 { get; set; } = "";
     [XmlAttribute("title2")] public string Title2 { get; set; } = "";
-    [XmlAttribute("librarySectionID")] public string LibrarySectionID { get; set; } = "";
+    [XmlAttribute("librarySectionID")] public string LibrarySectionId { get; set; } = "";
     [XmlAttribute("librarySectionTitle")] public string LibrarySectionTitle { get; set; } = "";
-    [XmlAttribute("librarySectionUUID")] public string LibrarySectionUUID { get; set; } = "";
+    [XmlAttribute("librarySectionUUID")] public string LibrarySectionUuid { get; set; } = "";
     [XmlAttribute("mixedParents")] public string MixedParents { get; set; } = "";
     [XmlAttribute("totalSize")] public string TotalSize { get; set; } = "";
     [XmlAttribute("offset")] public int Offset { get; set; }
@@ -108,16 +108,16 @@ public sealed class XmlMediaContainer
     [XmlAttribute("mediaTagVersion")] public string MediaTagVersion { get; set; } = "";
     [XmlAttribute("resourceSession")] public string ResourceSession { get; set; } = "";
 
-    [XmlAttribute("playQueueID")] public string PlayQueueID { get; set; } = "";
-    [XmlAttribute("playQueueSelectedItemID")] public string PlayQueueSelectedItemID { get; set; } = "";
+    [XmlAttribute("playQueueID")] public string PlayQueueId { get; set; } = "";
+    [XmlAttribute("playQueueSelectedItemID")] public string PlayQueueSelectedItemId { get; set; } = "";
     [XmlAttribute("playQueueSelectedItemPlayer")] public string PlayQueueSelectedItemPlayer { get; set; } = "";
     // Play-queue counters. Official Plex omits these from a plain item response, so PlexJson drops
     // them when they are zero - see ZeroMeansAbsentContainer in PlexJson.
     [XmlAttribute("playQueueSelectedItemOffset")] public long PlayQueueSelectedItemOffset { get; set; }
-    [XmlAttribute("playQueueSelectedMetadataItemID")] public string PlayQueueSelectedMetadataItemID { get; set; } = "";
+    [XmlAttribute("playQueueSelectedMetadataItemID")] public string PlayQueueSelectedMetadataItemId { get; set; } = "";
     [XmlAttribute("playQueueShuffled")] public string PlayQueueShuffled { get; set; } = "";
     [XmlAttribute("playQueueRepeat")] public string PlayQueueRepeat { get; set; } = "";
-    [XmlAttribute("playQueueSourceURI")] public string PlayQueueSourceURI { get; set; } = "";
+    [XmlAttribute("playQueueSourceURI")] public string PlayQueueSourceUri { get; set; } = "";
     [XmlAttribute("playQueueSourceTitle")] public string PlayQueueSourceTitle { get; set; } = "";
     [XmlAttribute("playQueueTotalCount")] public int PlayQueueTotalCount { get; set; }
     [XmlAttribute("playQueueVersion")] public int PlayQueueVersion { get; set; }
@@ -141,7 +141,7 @@ public sealed class XmlDirectory
     [XmlAttribute("language")] public string Language { get; set; } = "";
     [XmlAttribute("refreshing")] public string Refreshing { get; set; } = "";
     [XmlAttribute("uuid")] public string Uuid { get; set; } = "";
-    [XmlAttribute("librarySectionID")] public string LibrarySectionID { get; set; } = "";
+    [XmlAttribute("librarySectionID")] public string LibrarySectionId { get; set; } = "";
     [XmlAttribute("librarySectionTitle")] public string LibrarySectionTitle { get; set; } = "";
     [XmlAttribute("librarySectionKey")] public string LibrarySectionKey { get; set; } = "";
     [XmlAttribute("filters")] public string Filters { get; set; } = "";
@@ -194,12 +194,12 @@ public sealed class XmlVideo
     [XmlAttribute("grandparentThumb")] public string GrandparentThumb { get; set; } = "";
 
     /// <summary>Set on items returned inside a play queue; distinct from the library rating key.</summary>
-    [XmlAttribute("playQueueItemID")] public string PlayQueueItemID { get; set; } = "";
+    [XmlAttribute("playQueueItemID")] public string PlayQueueItemId { get; set; } = "";
     [XmlAttribute("studio")] public string Studio { get; set; } = "";
     [XmlAttribute("year")] public string Year { get; set; } = "";
     [XmlAttribute("summary")] public string Summary { get; set; } = "";
     [XmlAttribute("tagline")] public string Tagline { get; set; } = "";
-    [XmlAttribute("librarySectionID")] public string LibrarySectionID { get; set; } = "";
+    [XmlAttribute("librarySectionID")] public string LibrarySectionId { get; set; } = "";
     [XmlAttribute("librarySectionTitle")] public string LibrarySectionTitle { get; set; } = "";
     [XmlAttribute("librarySectionKey")] public string LibrarySectionKey { get; set; } = "";
     [XmlAttribute("thumb")] public string Thumb { get; set; } = "";
@@ -365,7 +365,7 @@ public sealed class XmlMedia
     [XmlAttribute("container")] public string Container { get; set; } = "";
     [XmlAttribute("optimizedForStreaming")] public string OptimizedForStreaming { get; set; } = "";
     [XmlAttribute("selected")] public string Selected { get; set; } = "";
-    [XmlAttribute("has64bitOffsets")] public string Has64bitOffsets { get; set; } = "";
+    [XmlAttribute("has64bitOffsets")] public string Has64BitOffsets { get; set; } = "";
     [XmlAttribute("partCount")] public int PartCount { get; set; }
 
     [XmlElement("Part")]
@@ -428,7 +428,7 @@ public sealed class XmlPart
     [XmlAttribute("deepAnalysisVersion")] public int DeepAnalysisVersion { get; set; }
     [XmlAttribute("audioProfile")] public string AudioProfile { get; set; } = "";
     [XmlAttribute("videoProfile")] public string VideoProfile { get; set; } = "";
-    [XmlAttribute("has64bitOffsets")] public string Has64bitOffsets { get; set; } = "";
+    [XmlAttribute("has64bitOffsets")] public string Has64BitOffsets { get; set; } = "";
     [XmlAttribute("requiredBandwidths")] public string RequiredBandwidths { get; set; } = "";
     [XmlAttribute("decision")] public string Decision { get; set; } = "";
     [XmlAttribute("selected")] public string Selected { get; set; } = "";

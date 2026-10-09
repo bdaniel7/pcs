@@ -12,27 +12,27 @@ namespace PlexCompatibleServer.Api.Controllers;
 /// </summary>
 internal sealed class ExternalMetadata : IMetadataService
 {
-    private readonly MetadataMatcher _matcher;
-    private readonly PlexTvClient _plex;
+    private readonly MetadataMatcher matcher;
+    private readonly PlexTvClient plex;
 
     internal SidecarStore Store { get; }
 
-    internal PlexTvClient Plex => _plex;
+    internal PlexTvClient Plex => plex;
 
     internal ExternalMetadata(HttpClient? http = null, string? contentRoot = null)
     {
         Store = new SidecarStore(contentRoot);
-        _matcher = new MetadataMatcher(Store);
-        _plex = new PlexTvClient(Store, http);
+        matcher = new MetadataMatcher(Store);
+        plex = new PlexTvClient(Store, http);
     }
 
     /// <summary>
     /// Captures the auth token the client sends (only on /identity). Full plex.tv metadata lookups
     /// need it; the search endpoint works anonymously, so a missing token still yields the guid.
     /// </summary>
-    public void CaptureToken(string? token) => _plex.CaptureToken(token);
+    public void CaptureToken(string? token) => plex.CaptureToken(token);
 
-    public bool TokenKnown => _plex.TokenKnown;
+    public bool TokenKnown => plex.TokenKnown;
 
     /// <summary>
     /// Cache-only overlay used by list/grid responses: a page of titles must never wait on
@@ -41,7 +41,7 @@ internal sealed class ExternalMetadata : IMetadataService
     internal void Apply(MediaItem item,
                         XmlVideo video)
     {
-        var rec = _matcher.ResolveLocal(item, video.Title, video.TitleSort);
+        var rec = matcher.ResolveLocal(item, video.Title, video.TitleSort);
 
         if (rec is not null) MetadataMapper.Overlay(item, video, rec);
     }
@@ -71,18 +71,18 @@ internal sealed class ExternalMetadata : IMetadataService
                                                  CancellationToken ct = default)
     {
         var isEpisode = item.Library is { Type: LibraryType.Show };
-        var rec = _matcher.ResolveLocal(item, title, titleSort);
+        var rec = matcher.ResolveLocal(item, title, titleSort);
 
         // No local record: look the movie up on plex.tv. The client resolves the guid it gets
         // against plex.tv, so an item without a real guid cannot open its detail page at all.
-        if (rec is null) rec = await _plex.LookupOnlineAsync(item, ct).ConfigureAwait(false);
+        if (rec is null) rec = await plex.LookupOnlineAsync(item, ct).ConfigureAwait(false);
 
         // A lookup that ran before the client sent its token (identity precedes metadata calls)
         // only has the guid; fill in the rich fields once the token is known.
         if (rec is not null && !rec.DetailChecked && !string.IsNullOrEmpty(rec.RatingKey) &&
-            _plex.TokenKnown)
+            plex.TokenKnown)
         {
-            if (await _plex.TryRefetchDetailAsync(rec, ct).ConfigureAwait(false))
+            if (await plex.TryRefetchDetailAsync(rec, ct).ConfigureAwait(false))
             {
                 var enrichedKey = MetadataMatcher.GetKey(item);
                 if (!string.IsNullOrEmpty(enrichedKey)) Store.PersistLookup(enrichedKey, rec);
@@ -92,10 +92,10 @@ internal sealed class ExternalMetadata : IMetadataService
         // A record written by the old scrape (or a pre-token lookup) carries the episode's content
         // but no season/episode hierarchy - the info screen reads those fields - so re-walk the
         // show once, after the token is known, and keep serving the old record if that fails.
-        if (rec is not null && isEpisode && _plex.TokenKnown &&
+        if (rec is not null && isEpisode && plex.TokenKnown &&
             (rec.Index is null || rec.ParentTitle is null || rec.GrandparentTitle is null))
         {
-            var fresh = await _plex.FetchRecordAsync(item, ct).ConfigureAwait(false);
+            var fresh = await plex.FetchRecordAsync(item, ct).ConfigureAwait(false);
 
             if (fresh is not null)
             {
@@ -114,12 +114,12 @@ internal sealed class ExternalMetadata : IMetadataService
     /// </summary>
     public SidecarItem? ResolveLocal(MediaItem item,
                                      string? title,
-                                     string? titleSort) => _matcher.ResolveLocal(item, title, titleSort);
+                                     string? titleSort) => matcher.ResolveLocal(item, title, titleSort);
 
-    internal bool HasRecord(MediaItem item) => _matcher.HasRecord(item);
+    internal bool HasRecord(MediaItem item) => matcher.HasRecord(item);
 
     public bool TryGetRecord(MediaItem item,
-                             out SidecarItem record) => _matcher.TryGetRecord(item, out record);
+                             out SidecarItem record) => matcher.TryGetRecord(item, out record);
 
     /// <summary>
     /// Fills sidecar gaps for every item no store covers: plex.tv search + detail per movie,
@@ -139,7 +139,7 @@ internal sealed class ExternalMetadata : IMetadataService
 
             try
             {
-                if (_matcher.TryGetRecord(item, out var existing))
+                if (matcher.TryGetRecord(item, out var existing))
                 {
                     // Episodes the old scrape covered have content but no season/episode
                     // hierarchy, and a guid-only record still awaits its detail: re-fetch both
@@ -161,7 +161,7 @@ internal sealed class ExternalMetadata : IMetadataService
 
                     if (movieMissingArtwork && !string.IsNullOrEmpty(existing.RatingKey))
                     {
-                        var refreshed = await _plex.TryRefetchDetailAsync(existing, ct).ConfigureAwait(false);
+                        var refreshed = await plex.TryRefetchDetailAsync(existing, ct).ConfigureAwait(false);
                         var artKey = MetadataMatcher.GetKey(item);
 
                         if (refreshed && !string.IsNullOrEmpty(artKey))
@@ -183,9 +183,9 @@ internal sealed class ExternalMetadata : IMetadataService
                         episodeMissingArtwork ||
                         movieMissingArtwork ||
                         (!existing.DetailChecked && !string.IsNullOrEmpty(existing.RatingKey) &&
-                         _plex.TokenKnown))
+                         plex.TokenKnown))
                     {
-                        var enriched = await _plex.FetchRecordAsync(item, ct).ConfigureAwait(false);
+                        var enriched = await plex.FetchRecordAsync(item, ct).ConfigureAwait(false);
                         var existingKey = MetadataMatcher.GetKey(item);
 
                         if (enriched?.Guid is not null && !string.IsNullOrEmpty(existingKey))
@@ -200,7 +200,7 @@ internal sealed class ExternalMetadata : IMetadataService
 
                     continue;
                 }
-                var rec = await _plex.FetchRecordAsync(item, ct).ConfigureAwait(false);
+                var rec = await plex.FetchRecordAsync(item, ct).ConfigureAwait(false);
                 var key = MetadataMatcher.GetKey(item);
 
                 if (rec?.Guid is null || string.IsNullOrEmpty(key))

@@ -24,19 +24,19 @@ public static class MediaTokens
 
     // Search titles are cut at the first quality token, so this set may include generic web/source
     // words ("web", "dl", "yts") that the stricter episode-title set below must not treat as junk.
-    private static readonly Regex SearchQualityTokens = new(
+    private static readonly Regex searchQualityTokens = new(
         "^(1080p|2160p|720p|480p|webrip|webdl|web|dl|bluray|brrip|bdremux|x264|x265|h264|h265|hevc|remux|aac|ac3|eac3|dts|ddp|atmos|truehd|hdr|sdr|proper|repack|limited|unrated|multi|dual|subbed|dubbed|imax|10bit|8bit|yts|yify|gg|bz)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // Deliberately strict (resolutions, codecs, containers only) so an episode legitimately titled
     // "A Web of Lies" survives while "Daddy Issues 1080p ATVP WEB-DL ..." yields "Daddy Issues".
-    private static readonly Regex ReleaseTokens = new(
+    private static readonly Regex releaseTokens = new(
         "^(1080p|2160p|720p|480p|576p|webrip|webdl|bluray|brrip|bdremux|remux|x264|x265|h264|h265|hevc|avc|aac|ac3|eac3|dts|ddp|atmos|truehd|hdr|hdr10|sdr|dv|proper|repack|internal|limited|extended|unrated|hdtv|dvdrip|10bit|8bit|imax|multi|dual|subbed|dubbed|amzn|atvp|netflix|hulu)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static bool IsSearchQualityToken(string token) => SearchQualityTokens.IsMatch(token);
+    public static bool IsSearchQualityToken(string token) => searchQualityTokens.IsMatch(token);
 
-    public static bool IsReleaseToken(string token) => ReleaseTokens.IsMatch(token);
+    public static bool IsReleaseToken(string token) => releaseTokens.IsMatch(token);
 
     /// <summary>
     /// Looser matcher for normalising a filename into a sidecar key: matches release tokens anywhere

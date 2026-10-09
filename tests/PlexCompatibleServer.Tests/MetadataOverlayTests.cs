@@ -15,15 +15,15 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class MetadataOverlayTests
 {
-    private static readonly FieldInfo CacheField = typeof(SidecarStore)
+    private static readonly FieldInfo cacheField = typeof(SidecarStore)
         .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-    private ExternalMetadata _metadata = null!;
+    private ExternalMetadata metadata = null!;
 
     [SetUp]
-    public void SetUp() => _metadata = new ExternalMetadata();
+    public void SetUp() => metadata = new ExternalMetadata();
 
-    private static MediaItem Movie(string fileName) => new()
+    private static MediaItem movie(string fileName) => new()
     {
         Id = 1,
         LibraryId = 1,
@@ -32,15 +32,15 @@ public class MetadataOverlayTests
         Title = "Movie.One.2020"
     };
 
-    private void SetCache(ConcurrentDictionary<string, SidecarItem> cache)
-        => CacheField.SetValue(_metadata.Store, cache);
+    private void setCache(ConcurrentDictionary<string, SidecarItem> cache)
+        => cacheField.SetValue(metadata.Store, cache);
 
-    private void ResetCache() => CacheField.SetValue(_metadata.Store, null);
+    private void resetCache() => cacheField.SetValue(metadata.Store, null);
 
     [Test]
     public void Apply_overlays_a_cached_movie_record_onto_the_video()
     {
-        SetCache(new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
+        setCache(new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
         {
             // The key is GetKey(item): filename stem lower-cased with non-alphanumerics removed.
             ["movieone2020"] = new SidecarItem
@@ -70,7 +70,7 @@ public class MetadataOverlayTests
         {
             var video = new XmlVideo { Title = "Movie.One.2020" };
 
-            _metadata.Apply(Movie("Movie.One.2020.mkv"), video);
+            metadata.Apply(movie("Movie.One.2020.mkv"), video);
 
             Assert.Multiple(() =>
             {
@@ -97,14 +97,14 @@ public class MetadataOverlayTests
         }
         finally
         {
-            ResetCache();
+            resetCache();
         }
     }
 
     [Test]
     public void Apply_falls_back_to_a_zero_rating_when_the_record_carries_none()
     {
-        SetCache(new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
+        setCache(new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
         {
             ["movieone2020"] = new SidecarItem { Title = "Movie One", DetailChecked = true }
         });
@@ -112,7 +112,7 @@ public class MetadataOverlayTests
         {
             var video = new XmlVideo { Title = "Movie.One.2020" };
 
-            _metadata.Apply(Movie("Movie.One.2020.mkv"), video);
+            metadata.Apply(movie("Movie.One.2020.mkv"), video);
 
             Assert.That(video.Ratings, Has.Count.EqualTo(1));
             Assert.Multiple(() =>
@@ -124,19 +124,19 @@ public class MetadataOverlayTests
         }
         finally
         {
-            ResetCache();
+            resetCache();
         }
     }
 
     [Test]
     public void Apply_with_no_record_leaves_video_untouched()
     {
-        SetCache(new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal));
+        setCache(new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal));
         try
         {
             var video = new XmlVideo { Title = "Untouched", Guid = "local://guid" };
 
-            _metadata.Apply(Movie("Unknown.Film.1999.mkv"), video);
+            metadata.Apply(movie("Unknown.Film.1999.mkv"), video);
 
             Assert.Multiple(() =>
             {
@@ -150,7 +150,7 @@ public class MetadataOverlayTests
         }
         finally
         {
-            ResetCache();
+            resetCache();
         }
     }
 }

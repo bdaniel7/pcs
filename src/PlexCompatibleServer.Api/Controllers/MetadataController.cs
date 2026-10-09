@@ -9,18 +9,18 @@ namespace PlexCompatibleServer.Api.Controllers;
 [ApiController]
 public sealed class MetadataController : ControllerBase
 {
-    private readonly IMediaRepository _repo;
-    private readonly ServerOptions _options;
-    private readonly StreamSelectionStore _selections;
-    private readonly IMetadataService _metadata;
+    private readonly IMediaRepository repo;
+    private readonly ServerOptions options;
+    private readonly StreamSelectionStore selections;
+    private readonly IMetadataService metadata;
 
     public MetadataController(IMediaRepository repo, ServerOptions options, StreamSelectionStore selections,
                               IMetadataService metadata)
     {
-        _repo = repo;
-        _options = options;
-        _selections = selections;
-        _metadata = metadata;
+        this.repo = repo;
+        this.options = options;
+        this.selections = selections;
+        this.metadata = metadata;
     }
 
     /// <summary>
@@ -32,12 +32,12 @@ public sealed class MetadataController : ControllerBase
     [Produces("application/xml", "application/json")]
     public async Task<IActionResult> Get(int id, CancellationToken ct)
     {
-        var item = await _repo.GetItemAsync(id, ct);
+        var item = await repo.GetItemAsync(id, ct);
         if (item is null) return NotFound();
 
         var kind = item.Library.Type == LibraryType.Movie ? "movie" : "show";
 
-        var video = VideoMapper.ToVideo(item, selections: _selections);
+        var video = VideoMapper.ToVideo(item, selections: selections);
 
         // The detail screen renders from the *first* item response it receives, which carries only
         // includeUserState=1 and no includeExternalMetadata. Gating the scraped-metadata sections
@@ -45,16 +45,16 @@ public sealed class MetadataController : ControllerBase
         // Genre, Director, Writer, Role, Rating, ...) absent from the response it actually renders
         // from, and the screen reports "content could not be loaded". Official Plex states these
         // fields on every item response even when it knows nothing about them, so we do too.
-        await MetadataParity.ApplyAsync(_metadata, item, video, id, includeExtras: true, ct: ct);
+        await MetadataParity.ApplyAsync(metadata, item, video, id, includeExtras: true, ct: ct);
 
         var container = new XmlMediaContainer
         {
             Size = 1,
             AllowSync = "1",
             Identifier = "com.plexapp.plugins.library",
-            LibrarySectionID = item.LibraryId.ToString(),
+            LibrarySectionId = item.LibraryId.ToString(),
             LibrarySectionTitle = item.Library.Name,
-            LibrarySectionUUID = _options.LibraryUuid(item.LibraryId, item.Library.Name, kind),
+            LibrarySectionUuid = options.LibraryUuid(item.LibraryId, item.Library.Name, kind),
             MediaTagPrefix = "/system/bundle/media/flags/",
             MediaTagVersion = PlaybackState.MediaTagVersion,
             Videos = new List<XmlVideo> { video }
@@ -71,12 +71,12 @@ public sealed class MetadataController : ControllerBase
     [HttpGet("/library/metadata/{id:int}/thumb")]
     [HttpGet("/library/metadata/{id:int}/thumb/{cacheBuster}")]
     public Task<IActionResult> Thumb(int id, CancellationToken ct) =>
-        ServeImageAsync(id, item => FirstExisting(item.OfficialPosterPath, item.PosterPath), ct);
+        serveImageAsync(id, item => firstExisting(item.OfficialPosterPath, item.PosterPath), ct);
 
     [HttpGet("/library/metadata/{id:int}/art")]
     [HttpGet("/library/metadata/{id:int}/art/{cacheBuster}")]
     public Task<IActionResult> Art(int id, CancellationToken ct) =>
-        ServeImageAsync(id, item => FirstExisting(item.OfficialArtPath, item.ArtPath), ct);
+        serveImageAsync(id, item => firstExisting(item.OfficialArtPath, item.ArtPath), ct);
 
     // Season poster pointer carried on episode rows (real Plex states parentThumb/grandparentThumb
     // on episodes; the season grid has no row of its own and renders from these). Chains into the
@@ -84,7 +84,7 @@ public sealed class MetadataController : ControllerBase
     [HttpGet("/library/metadata/{id:int}/parentThumb")]
     [HttpGet("/library/metadata/{id:int}/parentThumb/{cacheBuster}")]
     public Task<IActionResult> ParentThumb(int id, CancellationToken ct) =>
-        ServeImageAsync(id, item => FirstExisting(item.OfficialParentPosterPath,
+        serveImageAsync(id, item => firstExisting(item.OfficialParentPosterPath,
                                                   item.OfficialGrandparentPosterPath,
                                                   item.OfficialPosterPath,
                                                   item.PosterPath, item.ArtPath), ct);
@@ -92,7 +92,7 @@ public sealed class MetadataController : ControllerBase
     [HttpGet("/library/metadata/{id:int}/grandparentThumb")]
     [HttpGet("/library/metadata/{id:int}/grandparentThumb/{cacheBuster}")]
     public Task<IActionResult> GrandparentThumb(int id, CancellationToken ct) =>
-        ServeImageAsync(id, item => FirstExisting(item.OfficialGrandparentPosterPath,
+        serveImageAsync(id, item => firstExisting(item.OfficialGrandparentPosterPath,
                                                   item.OfficialPosterPath,
                                                   item.PosterPath, item.ArtPath), ct);
 
@@ -105,19 +105,19 @@ public sealed class MetadataController : ControllerBase
     public IActionResult ClearLogo() => NotFound();
 
     /// <summary>First path of the chain that still exists on disk, else 404.</summary>
-    private async Task<IActionResult> ServeImageAsync(int id, Func<MediaItem, string?> pick,
+    private async Task<IActionResult> serveImageAsync(int id, Func<MediaItem, string?> pick,
                                                       CancellationToken ct)
     {
-        var item = await _repo.GetItemAsync(id, ct);
+        var item = await repo.GetItemAsync(id, ct);
         if (item is null) return NotFound();
 
         var path = pick(item);
         if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return NotFound();
 
-        return PhysicalFile(path, GetContentType(path));
+        return PhysicalFile(path, getContentType(path));
     }
 
-    private static string? FirstExisting(params string?[] paths)
+    private static string? firstExisting(params string?[] paths)
     {
         foreach (var path in paths)
             if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
@@ -126,7 +126,7 @@ public sealed class MetadataController : ControllerBase
         return null;
     }
 
-    private static string GetContentType(string path) =>
+    private static string getContentType(string path) =>
         Path.GetExtension(path).ToLowerInvariant() switch
         {
             ".jpg" or ".jpeg" => "image/jpeg",

@@ -18,7 +18,7 @@ public class StoreBoundTests
     {
         var state = new PlaybackState();
 
-        for (var id = 1; id <= PlaybackState.MaxQueues + 1; id++)
+        for (var id = 1; id <= PlaybackState.MAX_QUEUES + 1; id++)
         {
             state.Create(id, $"/library/metadata/{id}", $"Title {id}");
         }
@@ -26,7 +26,7 @@ public class StoreBoundTests
         Assert.Multiple(() =>
         {
             Assert.That(state.Get(1), Is.Null, "the oldest queue must be evicted");
-            Assert.That(state.Get(PlaybackState.MaxQueues + 1), Is.Not.Null,
+            Assert.That(state.Get(PlaybackState.MAX_QUEUES + 1), Is.Not.Null,
                 "the newest queue must survive");
         });
     }
@@ -36,7 +36,7 @@ public class StoreBoundTests
     {
         var store = new StreamSelectionStore();
 
-        for (var partId = 1; partId <= StreamSelectionStore.MaxEntries + 1; partId++)
+        for (var partId = 1; partId <= StreamSelectionStore.MAX_ENTRIES + 1; partId++)
         {
             store.Set(partId, partId, partId);
         }
@@ -44,8 +44,8 @@ public class StoreBoundTests
         Assert.Multiple(() =>
         {
             Assert.That(store.Get(1), Is.EqualTo((0, 0)), "the oldest selection must be evicted");
-            Assert.That(store.Get(StreamSelectionStore.MaxEntries + 1),
-                Is.EqualTo((StreamSelectionStore.MaxEntries + 1, StreamSelectionStore.MaxEntries + 1)),
+            Assert.That(store.Get(StreamSelectionStore.MAX_ENTRIES + 1),
+                Is.EqualTo((StreamSelectionStore.MAX_ENTRIES + 1, StreamSelectionStore.MAX_ENTRIES + 1)),
                 "the newest selection must survive");
         });
     }
@@ -65,7 +65,7 @@ public class StoreBoundTests
                 SidecarSubtitles.Find(Path.Combine(directory, "Movie.mkv"));
             }
 
-            Assert.That(ListingCount(), Is.LessThanOrEqualTo(SidecarSubtitles.MaxListings),
+            Assert.That(listingCount(), Is.LessThanOrEqualTo(SidecarSubtitles.MaxListings),
                 "the directory-listing cache must not exceed its cap");
         }
         finally
@@ -75,7 +75,7 @@ public class StoreBoundTests
         }
     }
 
-    private static int ListingCount()
+    private static int listingCount()
     {
         var field = typeof(SidecarSubtitles).GetField("Listings", BindingFlags.NonPublic | BindingFlags.Static)!;
         var dict = (IDictionary)field.GetValue(null)!;
