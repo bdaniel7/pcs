@@ -86,102 +86,83 @@ public sealed class LibraryPagingTests
     [Test]
     public async Task All_shows_the_cached_official_title_instead_of_the_file_name()
     {
-        ResetExternalCache();
-        try
+        var metadata = new ExternalMetadata();
+        SetCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
         {
-            typeof(ExternalMetadata)
-                .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Static)!
-                .SetValue(null, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
-                {
-                    ["movie2"] = new SidecarItem
-                    {
-                        Title = "Real Movie Two",
-                        TitleSort = "Real Movie Two",
-                        DetailChecked = true
-                    }
-                });
-
-            var controller = BuildController();
-            var container = ParseXml(await controller.All(1, CancellationToken.None));
-
-            Assert.That(Titles(container), Is.EqualTo(new[]
+            ["movie2"] = new SidecarItem
             {
-                "Movie 1", "Real Movie Two", "Movie 3", "Movie 4", "Movie 5"
-            }));
-        }
-        finally
+                Title = "Real Movie Two",
+                TitleSort = "Real Movie Two",
+                DetailChecked = true
+            }
+        });
+
+        var controller = BuildController(metadata);
+        var container = ParseXml(await controller.All(1, CancellationToken.None));
+
+        Assert.That(Titles(container), Is.EqualTo(new[]
         {
-            ResetExternalCache();
-        }
+            "Movie 1", "Real Movie Two", "Movie 3", "Movie 4", "Movie 5"
+        }));
     }
 
     [Test]
     public async Task All_states_episode_hierarchy_but_never_the_foreign_parent_keys()
     {
-        ResetExternalCache();
-        try
+        var library = new MediaLibrary { Id = 2, Name = "TV", Type = LibraryType.Show };
+        library.Items.Add(new MediaItem
         {
-            var library = new MediaLibrary { Id = 2, Name = "TV", Type = LibraryType.Show };
-            library.Items.Add(new MediaItem
-            {
-                Id = 45,
-                LibraryId = library.Id,
-                Library = library,
-                Title = "Slow Horses S06E02 Daddy Issues 1080p.mkv",
-                FilePath = @"G:\Series\Slow Horses S06E02 Daddy Issues 1080p.mkv"
-            });
+            Id = 45,
+            LibraryId = library.Id,
+            Library = library,
+            Title = "Slow Horses S06E02 Daddy Issues 1080p.mkv",
+            FilePath = @"G:\Series\Slow Horses S06E02 Daddy Issues 1080p.mkv"
+        });
 
-            typeof(ExternalMetadata)
-                .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Static)!
-                .SetValue(null, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
-                {
-                    ["slowhorsess06e02daddyissues1080p"] = new SidecarItem
-                    {
-                        Title = "Daddy Issues",
-                        Index = "2",
-                        ParentIndex = "6",
-                        ParentTitle = "Season 6",
-                        GrandparentTitle = "Slow Horses",
-                        DetailChecked = true
-                    }
-                });
-
-            var controller = new LibraryController(
-                new FakeRepo(library),
-                new MediaScanTrigger(),
-                new ServerOptions(),
-                new StreamSelectionStore());
-            controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
-
-            var container = ParseXml(await controller.All(2, CancellationToken.None));
-            var video = container.Elements("Video").Single();
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(video.Attribute("title")?.Value, Is.EqualTo("Daddy Issues"));
-                Assert.That(video.Attribute("index")?.Value, Is.EqualTo("2"));
-                Assert.That(video.Attribute("parentIndex")?.Value, Is.EqualTo("6"));
-                Assert.That(video.Attribute("parentTitle")?.Value, Is.EqualTo("Season 6"));
-                Assert.That(video.Attribute("grandparentTitle")?.Value, Is.EqualTo("Slow Horses"));
-                // plex.tv's foreign keys would send the client into /library/metadata/{key}/children 404s.
-                Assert.That(video.Attribute("parentKey"), Is.Null);
-                Assert.That(video.Attribute("grandparentKey"), Is.Null);
-            });
-        }
-        finally
+        var metadata = new ExternalMetadata();
+        SetCache(metadata, new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal)
         {
-            ResetExternalCache();
-        }
+            ["slowhorsess06e02daddyissues1080p"] = new SidecarItem
+            {
+                Title = "Daddy Issues",
+                Index = "2",
+                ParentIndex = "6",
+                ParentTitle = "Season 6",
+                GrandparentTitle = "Slow Horses",
+                DetailChecked = true
+            }
+        });
+
+        var controller = new LibraryController(
+            new FakeRepo(library),
+            new MediaScanTrigger(),
+            new ServerOptions(),
+            new StreamSelectionStore(),
+            metadata);
+        controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
+
+        var container = ParseXml(await controller.All(2, CancellationToken.None));
+        var video = container.Elements("Video").Single();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(video.Attribute("title")?.Value, Is.EqualTo("Daddy Issues"));
+            Assert.That(video.Attribute("index")?.Value, Is.EqualTo("2"));
+            Assert.That(video.Attribute("parentIndex")?.Value, Is.EqualTo("6"));
+            Assert.That(video.Attribute("parentTitle")?.Value, Is.EqualTo("Season 6"));
+            Assert.That(video.Attribute("grandparentTitle")?.Value, Is.EqualTo("Slow Horses"));
+            // plex.tv's foreign keys would send the client into /library/metadata/{key}/children 404s.
+            Assert.That(video.Attribute("parentKey"), Is.Null);
+            Assert.That(video.Attribute("grandparentKey"), Is.Null);
+        });
     }
 
-    private static void ResetExternalCache()
-    {
-        typeof(ExternalMetadata)
-            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Static)!
-            .SetValue(null, null);
-    }
+    private static void SetCache(ExternalMetadata metadata, ConcurrentDictionary<string, SidecarItem> cache)
+        => typeof(SidecarStore)
+            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(metadata.Store, cache);
 
-    private static LibraryController BuildController()
+    private static LibraryController BuildController(ExternalMetadata? metadata = null)
     {
         var library = new MediaLibrary { Id = 1, Name = "Movies", Type = LibraryType.Movie };
         for (var id = 1; id <= 5; id++)
@@ -200,7 +181,8 @@ public sealed class LibraryPagingTests
             new FakeRepo(library),
             new MediaScanTrigger(),
             new ServerOptions(),
-            new StreamSelectionStore());
+            new StreamSelectionStore(),
+            metadata ?? new ExternalMetadata());
         controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
         return controller;
     }
@@ -236,6 +218,13 @@ public sealed class LibraryPagingTests
 
         public Task<MediaItem?> GetItemAsync(int id, CancellationToken ct)
             => Task.FromResult(_libraries.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == id));
+
+        public Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<MediaItem>>(
+                _libraries.Where(x => libraryIds.Contains(x.Id))
+                    .OrderBy(x => x.Id)
+                    .SelectMany(x => x.Items)
+                    .ToList());
 
         public Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries, CancellationToken ct)
             => Task.CompletedTask;

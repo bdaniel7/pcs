@@ -8,6 +8,14 @@ public interface IMediaRepository
     Task<MediaLibrary?> GetLibraryAsync(int id, CancellationToken ct);
     Task<IReadOnlyList<MediaItem>> GetItemsAsync(int libraryId, CancellationToken ct);
     Task<MediaItem?> GetItemAsync(int id, CancellationToken ct);
+
+    /// <summary>
+    /// Every item across the given libraries in one query, ordered by library then id so the
+    /// result keeps the same order as concatenating <see cref="GetItemsAsync"/> per library.
+    /// Unknown ids contribute nothing; an empty request returns nothing without a round trip.
+    /// </summary>
+    Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds, CancellationToken ct);
+
     Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries, CancellationToken ct);
 
     /// <summary>

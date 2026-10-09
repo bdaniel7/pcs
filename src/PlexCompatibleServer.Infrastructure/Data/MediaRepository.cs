@@ -50,6 +50,19 @@ public sealed class MediaRepository : IMediaRepository
             .FirstOrDefaultAsync(x => x.Id == id, ct);
     }
 
+    public async Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds, CancellationToken ct)
+    {
+        if (libraryIds.Count == 0) return [];
+
+        var ids = libraryIds as List<int> ?? libraryIds.ToList();
+        await using var db = await _factory.CreateDbContextAsync(ct);
+        return await db.Items.AsNoTracking().Include(x => x.Library)
+            .Where(x => ids.Contains(x.LibraryId))
+            .OrderBy(x => x.LibraryId).ThenBy(x => x.Id)
+            .ToListAsync(ct);
+    }
+
+
     public async Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries, CancellationToken ct)
     {
         await using var db = await _factory.CreateDbContextAsync(ct);
@@ -83,7 +96,13 @@ public sealed class MediaRepository : IMediaRepository
                 ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".ts", ".m2ts", ".webm"
             };
 
-            foreach (var file in Directory.EnumerateFiles(library.RootPath, "*.*", SearchOption.AllDirectories))
+            // Materialize the recursive walk on the thread pool: Directory.EnumerateFiles is
+            // synchronous, and a deep or network-backed tree can stall the scan thread.
+            var files = await Task.Run(
+                () => Directory.EnumerateFiles(library.RootPath, "*.*", SearchOption.AllDirectories).ToList(),
+                ct);
+
+            foreach (var file in files)
             {
                 ct.ThrowIfCancellationRequested();
                 if (!extensions.Contains(Path.GetExtension(file)))
@@ -116,7 +135,7 @@ public sealed class MediaRepository : IMediaRepository
 
                 var wasNew = !existing.ContainsKey(file);
                 if (wasNew || item.DurationMs == null || previousSize != info.Length)
-                    item.DurationMs = MediaDurationProbe.GetDurationMs(file);
+                    item.DurationMs = await MediaDurationProbe.GetDurationMsAsync(file, ct);
 
                 // Re-probe when the stream list is missing too, so a transient ffprobe failure
                 // (or an item scanned before probing existed) heals on a later scan.

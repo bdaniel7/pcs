@@ -19,12 +19,15 @@ public sealed class PlayQueueController : ControllerBase
     private readonly IPlaybackService _playback;
     private readonly PlaybackState _state;
     private readonly StreamSelectionStore _selections;
+    private readonly IMetadataService _metadata;
 
-    public PlayQueueController(IPlaybackService playback, PlaybackState state, StreamSelectionStore selections)
+    public PlayQueueController(IPlaybackService playback, PlaybackState state, StreamSelectionStore selections,
+                               IMetadataService metadata)
     {
         _playback = playback;
         _state = state;
         _selections = selections;
+        _metadata = metadata;
     }
 
     [HttpPost("/playQueues")]
@@ -74,7 +77,7 @@ public sealed class PlayQueueController : ControllerBase
     {
         var entry = queue.Items.FirstOrDefault(x => x.Id == queue.SelectedItemId);
         if (entry is null) return new XmlMediaContainer();
-        var video = LibraryController.ToVideoEnriched(item, includeLibrarySection: true, selections: _selections);
+        var video = LibraryController.ToVideoEnriched(_metadata, item, includeLibrarySection: true, selections: _selections);
         video.PlayQueueItemID = entry.Id.ToString();
 
         // The queue response is a summary: Media carries the part-less descriptor the client

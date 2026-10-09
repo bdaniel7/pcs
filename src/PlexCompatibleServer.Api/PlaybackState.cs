@@ -17,6 +17,13 @@ public sealed class PlaybackState
     /// </summary>
     public static string MediaTagVersion { get; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
 
+    /// <summary>
+    /// Queues are only meaningful for the launch that created them, but a long-running server keeps
+    /// accumulating them. The cap keeps memory bounded: once exceeded, the oldest queues (lowest id,
+    /// which are also the least recently created) are dropped. No client holds a queue that old.
+    /// </summary>
+    internal const int MaxQueues = 256;
+
     private readonly ConcurrentDictionary<int, PlayQueue> _queues = new();
     private int _nextQueueId;
     private int _nextItemId;
@@ -42,7 +49,23 @@ public sealed class PlaybackState
         };
 
         _queues[queueId] = queue;
+        Trim();
         return queue;
+    }
+
+    /// <summary>
+    /// Drops the oldest queues once the store grows past <see cref="MaxQueues"/>. Ids are monotonic,
+    /// so the lowest ids are the oldest and the safest to forget.
+    /// </summary>
+    private void Trim()
+    {
+        var excess = _queues.Count - MaxQueues;
+        if (excess <= 0) return;
+
+        foreach (var stale in _queues.Keys.OrderBy(static id => id).Take(excess))
+        {
+            _queues.TryRemove(stale, out _);
+        }
     }
 
     public PlayQueue? Get(int id) => _queues.TryGetValue(id, out var queue) ? queue : null;

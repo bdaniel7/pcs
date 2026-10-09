@@ -52,4 +52,54 @@ public class MediaRepositorySyncTests
                 try { File.Delete(p); } catch { }
         }
     }
+
+    [Test]
+    public async Task GetItemsByLibrariesAsync_returns_items_from_every_library_in_one_query()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), "pcs-batch-" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            var options = new DbContextOptionsBuilder<MediaDbContext>()
+                .UseSqlite($"Data Source={dbPath}").Options;
+            var factory = new TestFactory(options);
+
+            int moviesId;
+            int showsId;
+            await using (var db = factory.CreateDbContext())
+            {
+                await db.Database.EnsureCreatedAsync();
+                var movies = new MediaLibrary { Name = "Movies", RootPath = "C:\\m", Type = LibraryType.Movie };
+                var shows = new MediaLibrary { Name = "Shows", RootPath = "C:\\s", Type = LibraryType.Show };
+                db.Libraries.AddRange(movies, shows);
+                await db.SaveChangesAsync();
+                moviesId = movies.Id;
+                showsId = shows.Id;
+
+                db.Items.AddRange(
+                    new MediaItem { LibraryId = moviesId, FilePath = "a", Title = "A", SortTitle = "A" },
+                    new MediaItem { LibraryId = moviesId, FilePath = "b", Title = "B", SortTitle = "B" },
+                    new MediaItem { LibraryId = showsId, FilePath = "c", Title = "C", SortTitle = "C" });
+                await db.SaveChangesAsync();
+            }
+
+            var repo = new MediaRepository(factory);
+
+            var across = await repo.GetItemsByLibrariesAsync([moviesId, showsId], CancellationToken.None);
+            Assert.That(across.Select(x => x.Title), Is.EqualTo(new[] { "A", "B", "C" }),
+                "items must span both libraries, ordered by library then id");
+
+            var moviesOnly = await repo.GetItemsByLibrariesAsync([moviesId], CancellationToken.None);
+            Assert.That(moviesOnly.Select(x => x.Title), Is.EqualTo(new[] { "A", "B" }));
+
+            Assert.That(await repo.GetItemsByLibrariesAsync([], CancellationToken.None), Is.Empty,
+                "an empty request must not round trip");
+            Assert.That(await repo.GetItemsByLibrariesAsync([999], CancellationToken.None), Is.Empty,
+                "an unknown id contributes nothing");
+        }
+        finally
+        {
+            foreach (var p in new[] { dbPath, dbPath + "-wal", dbPath + "-shm" })
+                try { File.Delete(p); } catch { }
+        }
+    }
 }

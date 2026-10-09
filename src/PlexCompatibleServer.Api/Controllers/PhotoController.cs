@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using PlexCompatibleServer.Core.Interfaces;
 using PlexCompatibleServer.Infrastructure.Media;
@@ -11,6 +12,11 @@ public sealed class PhotoController : ControllerBase
     private static readonly byte[] PlaceholderPng =
         Convert.FromBase64String(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+
+    // The metadata id appears once per artwork URL; compile the pattern once instead of
+    // rebuilding it (and re-scanning the pattern) on every transcode request.
+    private static readonly Regex MetadataPath = new(@"/library/metadata/(\d+)", RegexOptions.Compiled);
+
 
     private readonly IMediaRepository _repo;
     private readonly ImageTranscoder _transcoder;
@@ -52,7 +58,7 @@ public sealed class PhotoController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(url)) return "";
 
-        var match = System.Text.RegularExpressions.Regex.Match(url, @"/library/metadata/(\d+)");
+        var match = MetadataPath.Match(url);
         if (!match.Success) return "";
 
         var item = await _repo.GetItemAsync(int.Parse(match.Groups[1].Value), ct);
@@ -79,9 +85,10 @@ public sealed class PhotoController : ControllerBase
         return FirstExisting(item.OfficialPosterPath, item.PosterPath, item.ArtPath);
     }
 
-    private static bool Slot(string url, string slot) =>
-        System.Text.RegularExpressions.Regex.IsMatch(
-            url, slot, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    // Slot markers are fixed literals ("/art/", "/parentthumb/", ...): a case-insensitive
+    // substring check is all the old Regex.IsMatch did, without rebuilding a pattern per call.
+    private static bool Slot(string url, string slot)
+        => url.Contains(slot, StringComparison.OrdinalIgnoreCase);
 
     private static string FirstExisting(params string?[] paths)
     {

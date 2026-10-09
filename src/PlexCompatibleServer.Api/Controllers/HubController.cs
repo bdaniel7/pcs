@@ -14,11 +14,13 @@ public sealed class HubController : ControllerBase
 
     private readonly IMediaRepository _repo;
     private readonly ServerOptions _options;
+    private readonly IMetadataService _metadata;
 
-    public HubController(IMediaRepository repo, ServerOptions options)
+    public HubController(IMediaRepository repo, ServerOptions options, IMetadataService metadata)
     {
         _repo = repo;
         _options = options;
+        _metadata = metadata;
     }
 
     [HttpGet("/hubs")]
@@ -190,7 +192,7 @@ public sealed class HubController : ControllerBase
             Size = items.Count,
             MixedParents = "1",
             TotalSize = items.Count.ToString(),
-            Videos = items.Select(x => LibraryController.ToVideoEnriched(x)).ToList()
+            Videos = items.Select(x => LibraryController.ToVideoEnriched(_metadata, x)).ToList()
         });
     }
 
@@ -232,7 +234,8 @@ public sealed class HubController : ControllerBase
         // items do not.
         for (var i = 0; i < related.Count; i++)
         {
-            MetadataParity.Apply(related[i], relatedVideos[i], related[i].Id, includeExtras: false);
+            await MetadataParity.ApplyAsync(_metadata, related[i], relatedVideos[i], related[i].Id,
+                includeExtras: false, ct: ct);
             relatedVideos[i].ChapterSource = "media";
         }
 
@@ -275,13 +278,11 @@ public sealed class HubController : ControllerBase
             _ => (LibraryType?)null
         };
 
-        var items = new List<MediaItem>();
+        IReadOnlyList<MediaItem> items = [];
         if (wanted is not null)
         {
-            foreach (var library in libraries.Where(x => x.Type == wanted.Value))
-            {
-                items.AddRange(await _repo.GetItemsAsync(library.Id, ct));
-            }
+            items = await _repo.GetItemsByLibrariesAsync(
+                libraries.Where(x => x.Type == wanted.Value).Select(x => x.Id).ToList(), ct);
         }
 
         var recent = items.OrderByDescending(x => x.UpdatedAt).Take(ResolveLimit()).ToList();
@@ -291,7 +292,7 @@ public sealed class HubController : ControllerBase
             Size = recent.Count,
             MixedParents = "1",
             TotalSize = recent.Count.ToString(),
-            Videos = recent.Select(x => LibraryController.ToVideoEnriched(x)).ToList()
+            Videos = recent.Select(x => LibraryController.ToVideoEnriched(_metadata, x)).ToList()
         });
     }
 
@@ -314,11 +315,7 @@ public sealed class HubController : ControllerBase
         int limit,
         CancellationToken ct)
     {
-        var items = new List<MediaItem>();
-        foreach (var library in libraries)
-        {
-            items.AddRange(await _repo.GetItemsAsync(library.Id, ct));
-        }
+        var items = await _repo.GetItemsByLibrariesAsync(libraries.Select(x => x.Id).ToList(), ct);
 
         var recent = items
             .OrderByDescending(x => x.UpdatedAt)
@@ -326,7 +323,7 @@ public sealed class HubController : ControllerBase
             .ToList();
 
         var videos = recent
-            .Select(x => LibraryController.ToVideoEnriched(x, includeLibrarySection: true))
+            .Select(x => LibraryController.ToVideoEnriched(_metadata, x, includeLibrarySection: true))
             .ToList();
 
         return new XmlHub
@@ -343,7 +340,7 @@ public sealed class HubController : ControllerBase
         };
     }
 
-    private static XmlHub SectionHub(
+    private XmlHub SectionHub(
         string key,
         string title,
         string hubType,
@@ -353,7 +350,7 @@ public sealed class HubController : ControllerBase
         int limit)
     {
         var recent = items.OrderByDescending(x => x.UpdatedAt).Take(limit).ToList();
-        var videos = recent.Select(x => LibraryController.ToVideoEnriched(x)).ToList();
+        var videos = recent.Select(x => LibraryController.ToVideoEnriched(_metadata, x)).ToList();
 
         return new XmlHub
         {
@@ -386,7 +383,7 @@ public sealed class HubController : ControllerBase
     /// otherwise one row per half-watched item, newest interaction first. Rows carry viewOffset,
     /// which is what the client uses both for the progress ring and to seek on resume.
     /// </summary>
-    private static XmlHub ProgressHubOrEmpty(
+    private XmlHub ProgressHubOrEmpty(
         string key,
         string title,
         string type,
@@ -396,7 +393,7 @@ public sealed class HubController : ControllerBase
     {
         if (items.Count == 0) return EmptyHub(key, title, type, hubIdentifier, context);
 
-        var videos = items.Select(x => LibraryController.ToVideoEnriched(x)).ToList();
+        var videos = items.Select(x => LibraryController.ToVideoEnriched(_metadata, x)).ToList();
 
         return new XmlHub
         {

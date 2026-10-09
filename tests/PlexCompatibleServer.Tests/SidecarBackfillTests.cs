@@ -8,11 +8,16 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class SidecarBackfillTests
 {
-    private static void ResetSidecarCache()
+    private ExternalMetadata _metadata = null!;
+
+    [SetUp]
+    public void SetUp() => _metadata = new ExternalMetadata();
+
+    private void ResetSidecarCache()
     {
-        typeof(ExternalMetadata)
-            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Static)!
-            .SetValue(null, null);
+        typeof(SidecarStore)
+            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(_metadata.Store, null);
     }
 
     [Test]
@@ -31,7 +36,7 @@ public class SidecarBackfillTests
                 Summary = "A summary written by the backfill."
             };
 
-            ExternalMetadata.UpsertSidecar("backfilltestkey", rec);
+            _metadata.Store.UpsertSidecar("backfilltestkey", rec);
 
             Assert.That(File.Exists(sidecar), Is.True, "sidecar file not written");
             var raw = File.ReadAllText(sidecar);
@@ -46,7 +51,7 @@ public class SidecarBackfillTests
                 FilePath = @"G:\Movies\Backfill.Test.2024.mp4",
                 Year = 2024
             };
-            Assert.That(ExternalMetadata.HasRecord(item), Is.True,
+            Assert.That(_metadata.HasRecord(item), Is.True,
                 "record written by the backfill must be served");
         }
         finally
@@ -63,7 +68,7 @@ public class SidecarBackfillTests
     }
 
     [Test]
-    public void Backfill_skips_covered_items_and_gates_items_without_a_library()
+    public async Task Backfill_skips_covered_items_and_gates_items_without_a_library()
     {
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         var sidecar = Path.Combine(wwwroot, "plex-metadata.json");
@@ -77,7 +82,7 @@ public class SidecarBackfillTests
                 FilePath = @"G:\Movies\Backfill.Test.2024.mp4",
                 Year = 2024
             };
-            ExternalMetadata.UpsertSidecar("backfilltestkey", new SidecarItem
+            _metadata.Store.UpsertSidecar("backfilltestkey", new SidecarItem
             {
                 Title = "Backfill Test",
                 Guid = "plex://movie/aaaaaaaaaaaaaaaaaaaaaaaa"
@@ -86,7 +91,7 @@ public class SidecarBackfillTests
             // Library is null -> the movie-only gate must reject it before any network call.
             var gated = new MediaItem { Id = 2, Title = "Whatever", FilePath = @"G:\Movies\Whatever.2024.mp4", Year = 2024 };
 
-            var result = ExternalMetadata.Backfill(new[] { covered, gated });
+            var result = await _metadata.BackfillAsync(new[] { covered, gated }, CancellationToken.None);
 
             Assert.That(result.Scanned, Is.EqualTo(2));
             Assert.That(result.Present, Is.EqualTo(1), "covered item must be skipped");
@@ -106,3 +111,4 @@ public class SidecarBackfillTests
         }
     }
 }
+

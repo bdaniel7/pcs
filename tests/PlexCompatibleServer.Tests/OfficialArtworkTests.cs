@@ -192,6 +192,9 @@ public class OfficialArtworkTests
         public Task<MediaItem?> GetItemAsync(int id, CancellationToken ct)
             => Task.FromResult(item.Id == id ? item : null);
 
+        public Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<MediaItem>>([item]);
+
         public Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries, CancellationToken ct)
             => Task.CompletedTask;
 
@@ -234,7 +237,7 @@ public class OfficialArtworkTests
         item.OfficialPosterPath = official;
         item.PosterPath = frame;
         var controller = new MetadataController(new FakeRepo(item), new ServerOptions(),
-                                                new StreamSelectionStore());
+                                                new StreamSelectionStore(), new ExternalMetadata());
 
         var hit = await controller.Thumb(3, CancellationToken.None) as PhysicalFileResult;
         Assert.That(hit, Is.Not.Null);
@@ -255,7 +258,7 @@ public class OfficialArtworkTests
         var item = Item(44, LibraryType.Show, season, show);
         item.PosterPath = frame;
         var controller = new MetadataController(new FakeRepo(item), new ServerOptions(),
-                                                new StreamSelectionStore());
+                                                new StreamSelectionStore(), new ExternalMetadata());
 
         var all = await controller.ParentThumb(44, CancellationToken.None) as PhysicalFileResult;
         Assert.That(all!.FileName, Is.EqualTo(season));

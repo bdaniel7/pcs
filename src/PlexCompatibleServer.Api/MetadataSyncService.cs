@@ -1,4 +1,3 @@
-using PlexCompatibleServer.Api.Controllers;
 using PlexCompatibleServer.Core.Interfaces;
 using PlexCompatibleServer.Core.Models;
 using PlexCompatibleServer.Infrastructure.Media;
@@ -21,14 +20,16 @@ public sealed class MetadataSyncService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<MetadataSyncService> _logger;
     private readonly RemoteArtworkCache _artwork;
+    private readonly IMetadataService _metadata;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public MetadataSyncService(IServiceScopeFactory scopeFactory, ILogger<MetadataSyncService> logger,
-                               RemoteArtworkCache artwork)
+                               RemoteArtworkCache artwork, IMetadataService metadata)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _artwork = artwork;
+        _metadata = metadata;
     }
 
     public async Task<BackfillResult> RunAsync(CancellationToken ct)
@@ -44,7 +45,7 @@ public sealed class MetadataSyncService
             foreach (var library in libraries)
                 items.AddRange(await repo.GetItemsAsync(library.Id, ct));
 
-            var result = ExternalMetadata.Backfill(items);
+            var result = await _metadata.BackfillAsync(items, ct);
             _logger.LogInformation(
                 "Metadata sync finished: {Scanned} scanned, {Present} present, {Created} created, {Enriched} enriched, {Failed} failed.",
                 result.Scanned, result.Present, result.Created, result.Enriched, result.Failed.Count);
@@ -74,7 +75,7 @@ public sealed class MetadataSyncService
         foreach (var item in items)
         {
             ct.ThrowIfCancellationRequested();
-            if (!ExternalMetadata.TryGetRecord(item, out var rec)) continue;
+            if (!_metadata.TryGetRecord(item, out var rec)) continue;
 
             string? poster = null;
             string? art = null;

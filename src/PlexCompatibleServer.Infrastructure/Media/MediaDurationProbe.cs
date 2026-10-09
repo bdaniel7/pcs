@@ -38,6 +38,15 @@ public static class MediaDurationProbe
         catch (NotSupportedException) { return null; }
     }
 
+    /// <summary>
+    /// Same probe, but the file seek/read runs on the thread pool so a scan never blocks the
+    /// caller's thread. Cancellation is only observed before the work is scheduled: the probe
+    /// itself is short and does not poll the token.
+    /// </summary>
+    public static Task<int?> GetDurationMsAsync(string path, CancellationToken ct)
+        => Task.Run(() => GetDurationMs(path), ct);
+
+
     private static int TryReadMatroska(Stream stream)
     {
         if (!TryReadEbmlId(stream, out var id) || id != EbmlHeader) return 0;

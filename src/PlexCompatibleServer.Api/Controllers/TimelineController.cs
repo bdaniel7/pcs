@@ -16,6 +16,9 @@ public sealed class TimelineController : ControllerBase
 {
     private readonly IMediaRepository _repo;
 
+    // Trailing digits of a "/library/metadata/5"-style key; compiled once, not per report.
+    private static readonly Regex TrailingId = new(@"(\d+)$", RegexOptions.Compiled);
+
     public TimelineController(IMediaRepository repo) => _repo = repo;
 
     [HttpGet("/:/timeline")]
@@ -81,7 +84,7 @@ public sealed class TimelineController : ControllerBase
         if (string.IsNullOrWhiteSpace(value)) return 0;
         if (int.TryParse(value, out var bare)) return bare;
 
-        var match = Regex.Match(value, @"(\d+)$");
+        var match = TrailingId.Match(value);
         return match.Success && int.TryParse(match.Groups[1].Value, out var id) ? id : 0;
     }
 

@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text;
 using System.Xml.Serialization;
@@ -18,11 +19,84 @@ public static class PlexJson
         return sb.ToString();
     }
 
+    private static readonly ConcurrentDictionary<Type, string> RootNames = new();
+    private static readonly ConcurrentDictionary<Type, MemberPlan[]> Plans = new();
+
     private static string RootName(Type type)
+        => RootNames.GetOrAdd(type, static t =>
+        {
+            var attr = t.GetCustomAttribute<XmlRootAttribute>();
+            return attr != null ? attr.ElementName : t.Name;
+        });
+
+    /// <summary>
+    /// The reflection work needed to serialize a type, resolved once: the writeable members in
+    /// declaration order with their XML/JSON names, plus every name-based set membership the
+    /// writer would otherwise re-evaluate for each instance.
+    /// </summary>
+    private sealed class MemberPlan
     {
-        var attr = type.GetCustomAttribute<XmlRootAttribute>();
-        return attr != null ? attr.ElementName : type.Name;
+        public required PropertyInfo Property { get; init; }
+        public required string Name { get; init; }
+        public bool IsAttribute { get; init; }
+        public bool StringValued { get; init; }
+        public bool BooleanValued { get; init; }
+        public bool NumericValued { get; init; }
+        public bool ZeroFilledMetadata { get; init; }
+        public bool EmptyMetadata { get; init; }
+        public bool StreamZeroMeansAbsent { get; init; }
+        public bool ContainerZeroMeansAbsentQueue { get; init; }
+        public bool OptimizedPart { get; init; }
+        public bool EmptyMetadataSection { get; init; }
     }
+
+    private static MemberPlan[] PlanFor(Type type) => Plans.GetOrAdd(type, BuildPlan);
+
+    private static MemberPlan[] BuildPlan(Type type)
+    {
+        var plans = new List<MemberPlan>();
+
+        foreach (var property in type.GetProperties())
+        {
+            if (property.GetIndexParameters().Length > 0) continue;
+
+            var attribute = property.GetCustomAttribute<XmlAttributeAttribute>();
+            if (attribute?.AttributeName is { } attrName)
+            {
+                plans.Add(new MemberPlan
+                {
+                    Property = property,
+                    Name = attrName,
+                    IsAttribute = true,
+                    StringValued = StringValuedAttributes.Contains(attrName),
+                    BooleanValued = BooleanAttributes.Contains(attrName),
+                    NumericValued = NumericValuedAttributes.Contains(attrName),
+                    ZeroFilledMetadata = ZeroFilledMetadataAttributes.Contains(attrName),
+                    EmptyMetadata = EmptyMetadataAttributes.Contains(attrName),
+                    StreamZeroMeansAbsent = type == typeof(XmlStream) && ZeroMeansAbsent.Contains(attrName),
+                    ContainerZeroMeansAbsentQueue =
+                        type == typeof(XmlMediaContainer) && ZeroMeansAbsentContainer.Contains(attrName),
+                    OptimizedPart = attrName == "optimizedForStreaming" && type == typeof(XmlPart)
+                });
+                continue;
+            }
+
+            var element = property.GetCustomAttribute<XmlElementAttribute>();
+            if (element?.ElementName is { } elemName)
+            {
+                plans.Add(new MemberPlan
+                {
+                    Property = property,
+                    Name = JsonElementName(elemName),
+                    IsAttribute = false,
+                    EmptyMetadataSection = EmptyMetadataSections.Contains(elemName)
+                });
+            }
+        }
+
+        return [.. plans];
+    }
+
 
     // Plex's XML and JSON dialects disagree on a few element names. The client parses
     // JSON, so a hub whose rows arrive as "Video" instead of "Metadata" renders no rows.
@@ -107,18 +181,15 @@ public static class PlexJson
 
     private static void WriteObject(StringBuilder sb, object model)
     {
-        var type = model.GetType();
         sb.Append('{');
         var first = true;
 
-        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        foreach (var plan in PlanFor(model.GetType()))
         {
-            if (property.GetIndexParameters().Length > 0) continue;
+            var raw = plan.Property.GetValue(model);
 
-            var attribute = property.GetCustomAttribute<XmlAttributeAttribute>();
-            if (attribute?.AttributeName is { } attrName)
+            if (plan.IsAttribute)
             {
-                var raw = property.GetValue(model);
                 if (raw is null) continue;
                 // Models are non-nullable and default to "", so blank is the "absent" signal.
                 if (raw is string text && text.Length == 0)
@@ -129,71 +200,65 @@ public static class PlexJson
                     // an empty string would trade a missing key for a type mismatch. State a typed
                     // zero instead: the movie screen draws the rating stars straight from
                     // audienceRating, and an absent value throws there.
-                    if (ZeroFilledMetadataAttributes.Contains(attrName))
+                    if (plan.ZeroFilledMetadata)
                     {
                         WriteSeparator(sb, ref first);
-                        WriteQuoted(sb, attrName);
+                        WriteQuoted(sb, plan.Name);
                         sb.Append(':');
                         sb.Append('0');
                         continue;
                     }
 
-                    if (!EmptyMetadataAttributes.Contains(attrName)) continue;
+                    if (!plan.EmptyMetadata) continue;
                 }
-                if (type == typeof(XmlStream) && ZeroMeansAbsent.Contains(attrName) && IsZero(raw)) continue;
+                if (plan.StreamZeroMeansAbsent && IsZero(raw)) continue;
                 // A container that is not a play queue must not claim to be one: official Plex
                 // omits these counters entirely unless a play queue set them. XML cannot express
                 // "absent" for a non-nullable value, so the zero is dropped here instead. Gated on
                 // PlayQueueID because inside a real play queue a zero offset is meaningful.
-                if (type == typeof(XmlMediaContainer) && ZeroMeansAbsentContainer.Contains(attrName) && IsZero(raw)
+                if (plan.ContainerZeroMeansAbsentQueue && IsZero(raw)
                     && string.IsNullOrEmpty(((XmlMediaContainer)model).PlayQueueID)) continue;
                 WriteSeparator(sb, ref first);
-                WriteQuoted(sb, attrName);
+                WriteQuoted(sb, plan.Name);
                 sb.Append(':');
-                WriteAttributeScalar(sb, attrName, raw, model);
+                WriteAttributeScalar(sb, plan, raw);
                 continue;
             }
 
-            var element = property.GetCustomAttribute<XmlElementAttribute>();
-            if (element?.ElementName is { } elemName)
+            if (raw is null) continue;
+            if (raw is not IEnumerable items)
             {
-                var value = property.GetValue(model);
-                if (value is null) continue;
-                if (value is not IEnumerable items)
+                WriteSeparator(sb, ref first);
+                WriteQuoted(sb, plan.Name);
+                sb.Append(':');
+                WriteObject(sb, raw);
+                continue;
+            }
+
+            var elements = items.Cast<object>().Where(x => x is not null).ToList();
+            if (elements.Count == 0)
+            {
+                if (!WantsEmptyMetadataSections(model)) continue;
+
+                if (plan.EmptyMetadataSection)
                 {
                     WriteSeparator(sb, ref first);
-                    WriteQuoted(sb, JsonElementName(elemName));
-                    sb.Append(':');
-                    WriteObject(sb, value);
-                    continue;
+                    WriteQuoted(sb, plan.Name);
+                    sb.Append(":[");
+                    sb.Append(']');
                 }
-
-                var elements = items.Cast<object>().Where(x => x is not null).ToList();
-                if (elements.Count == 0)
-                {
-                    if (!WantsEmptyMetadataSections(model)) continue;
-
-                    if (EmptyMetadataSections.Contains(elemName))
-                    {
-                        WriteSeparator(sb, ref first);
-                        WriteQuoted(sb, JsonElementName(elemName));
-                        sb.Append(":[");
-                        sb.Append(']');
-                    }
-                    continue;
-                }
-
-                WriteSeparator(sb, ref first);
-                WriteQuoted(sb, JsonElementName(elemName));
-                sb.Append(":[");
-                for (var i = 0; i < elements.Count; i++)
-                {
-                    if (i > 0) sb.Append(',');
-                    WriteObject(sb, elements[i]);
-                }
-                sb.Append(']');
                 continue;
             }
+
+            WriteSeparator(sb, ref first);
+            WriteQuoted(sb, plan.Name);
+            sb.Append(":[");
+            for (var i = 0; i < elements.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                WriteObject(sb, elements[i]);
+            }
+            sb.Append(']');
         }
 
         sb.Append('}');
@@ -213,31 +278,28 @@ public static class PlexJson
     // surfaces as "content could not be loaded" on the info page even though every request
     // succeeded. The JSON type of each attribute is therefore pinned to what real Plex sends
     // rather than inferred from how the model happens to store it.
-    private static void WriteAttributeScalar(StringBuilder sb, string attrName, object value, object? model = null)
+    private static void WriteAttributeScalar(StringBuilder sb, MemberPlan plan, object value)
     {
         var invariant = System.Globalization.CultureInfo.InvariantCulture;
 
         // optimizedForStreaming is the one attribute official Plex types differently depending on
         // where it appears: an integer on Media, a boolean on Part. Serializing both as an integer
         // hands the client a number where it expects a boolean.
-        if (attrName == "optimizedForStreaming" && model is XmlPart)
+        if (plan.OptimizedPart)
         {
             WriteBoolean(sb, value);
             return;
         }
 
-        if (StringValuedAttributes.Contains(attrName))
+        if (plan.StringValued)
         {
             WriteQuoted(sb, Convert.ToString(value, invariant) ?? "");
             return;
         }
 
-        if (BooleanAttributes.Contains(attrName))
-        {
-            if (WriteBoolean(sb, value)) return;
-        }
+        if (plan.BooleanValued && WriteBoolean(sb, value)) return;
 
-        if (NumericValuedAttributes.Contains(attrName))
+        if (plan.NumericValued)
         {
             var text = Convert.ToString(value, invariant) ?? "";
             if (double.TryParse(text, System.Globalization.NumberStyles.Float, invariant, out var number))

@@ -39,6 +39,13 @@ public static class SidecarSubtitles
     /// </summary>
     private static readonly TimeSpan ListingTtl = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Upper bound on cached directory listings. Directories that come and go would otherwise pin
+    /// their listing for the life of the process, so the oldest entries are dropped once the store
+    /// grows past this cap. Mutable so tests can exercise eviction with a handful of directories.
+    /// </summary>
+    internal static int MaxListings { get; set; } = 512;
+
     private static readonly ConcurrentDictionary<string, Listing> Listings = new(StringComparer.Ordinal);
 
     private sealed record Listing(long Stamp, DateTime LoadedAt, string[] Files);
@@ -230,12 +237,25 @@ public static class SidecarSubtitles
 
             var files = Directory.GetFiles(directory);
             Listings[directory] = new Listing(stamp, loadedAt, files);
+            TrimListings();
             return files;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // A listing that cannot be read is better served from cache than as no subtitles.
             return Listings.TryGetValue(directory, out var stale) ? stale.Files : [];
+        }
+    }
+
+    /// <summary>Drops the entries loaded longest ago once the listing store exceeds its cap.</summary>
+    private static void TrimListings()
+    {
+        var excess = Listings.Count - MaxListings;
+        if (excess <= 0) return;
+
+        foreach (var stale in Listings.OrderBy(static x => x.Value.LoadedAt).Take(excess))
+        {
+            Listings.TryRemove(stale.Key, out _);
         }
     }
 

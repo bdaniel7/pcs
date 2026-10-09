@@ -18,11 +18,16 @@ public class SidecarDiagnosticTests
         return Path.Combine(dir!, "src", "PlexCompatibleServer.Api");
     }
 
-    private static void ResetSidecarCache()
+    private ExternalMetadata _metadata = null!;
+
+    [SetUp]
+    public void SetUp() => _metadata = new ExternalMetadata();
+
+    private void ResetSidecarCache()
     {
-        typeof(ExternalMetadata)
-            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Static)!
-            .SetValue(null, null);
+        typeof(SidecarStore)
+            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(_metadata.Store, null);
     }
 
     [Test]
@@ -33,7 +38,7 @@ public class SidecarDiagnosticTests
         try
         {
             var dict = JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(
-                File.ReadAllText(path), ExternalMetadata.Options);
+                File.ReadAllText(path), SidecarStore.Options);
             TestContext.WriteLine($"loaded {dict!.Count} entries");
             Assert.That(dict.Count, Is.GreaterThan(0));
         }
@@ -44,7 +49,7 @@ public class SidecarDiagnosticTests
     }
 
     [Test]
-    public void Disclosure_day_sidecar_match()
+    public async Task Disclosure_day_sidecar_match()
     {
         var prev = Directory.GetCurrentDirectory();
         Directory.SetCurrentDirectory(FindApiProjectDir());
@@ -61,7 +66,7 @@ public class SidecarDiagnosticTests
 
             try
             {
-                ExternalMetadata.Apply(item, video);
+                await _metadata.ApplyAsync(item, video);
             }
             catch (Exception ex)
             {

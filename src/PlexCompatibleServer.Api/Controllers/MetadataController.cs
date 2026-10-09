@@ -12,12 +12,15 @@ public sealed class MetadataController : ControllerBase
     private readonly IMediaRepository _repo;
     private readonly ServerOptions _options;
     private readonly StreamSelectionStore _selections;
+    private readonly IMetadataService _metadata;
 
-    public MetadataController(IMediaRepository repo, ServerOptions options, StreamSelectionStore selections)
+    public MetadataController(IMediaRepository repo, ServerOptions options, StreamSelectionStore selections,
+                              IMetadataService metadata)
     {
         _repo = repo;
         _options = options;
         _selections = selections;
+        _metadata = metadata;
     }
 
     /// <summary>
@@ -42,7 +45,7 @@ public sealed class MetadataController : ControllerBase
         // Genre, Director, Writer, Role, Rating, ...) absent from the response it actually renders
         // from, and the screen reports "content could not be loaded". Official Plex states these
         // fields on every item response even when it knows nothing about them, so we do too.
-        MetadataParity.Apply(item, video, id, includeExtras: true);
+        await MetadataParity.ApplyAsync(_metadata, item, video, id, includeExtras: true, ct: ct);
 
         var container = new XmlMediaContainer
         {

@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using PlexCompatibleServer.Api;
+using PlexCompatibleServer.Api.Controllers;
 using PlexCompatibleServer.Api.Hosted;
 using PlexCompatibleServer.Api.Options;
 using PlexCompatibleServer.Core.Interfaces;
@@ -35,6 +36,10 @@ builder.Services.AddSingleton(mediaArt);
 builder.Services.AddSingleton<PosterGenerator>();
 builder.Services.AddSingleton<RemoteArtworkCache>();
 builder.Services.AddSingleton<ImageTranscoder>();
+// Sidecar and lookup-cache files live in the web root of the content root (project dir in dev,
+// app dir when published) - never under the output directory's wwwroot.
+builder.Services.AddSingleton<IMetadataService>(
+    new ExternalMetadata(contentRoot: builder.Environment.ContentRootPath));
 // RemoteArtworkCache fetches through IHttpClientFactory instead of owning an HttpClient.
 builder.Services.AddHttpClient();
 
@@ -89,10 +94,6 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Sidecar and lookup-cache files live in the web root of the content root (project dir in
-// dev, app dir when published) - never under the output directory's wwwroot.
-PlexCompatibleServer.Api.Controllers.ExternalMetadata.ContentRoot = builder.Environment.ContentRootPath;
-
 app.UseCors();
 
 // Browsable UI at /web/. The root path stays the Plex server-info response because
@@ -125,7 +126,7 @@ app.Use(async (context, next) =>
     // The client only sends its token on /identity; remember it for plex.tv metadata lookups.
     var requestToken = context.Request.Query["X-Plex-Token"].FirstOrDefault()
         ?? context.Request.Headers["X-Plex-Token"].FirstOrDefault();
-    PlexCompatibleServer.Api.Controllers.ExternalMetadata.CaptureToken(requestToken);
+    context.RequestServices.GetRequiredService<IMetadataService>().CaptureToken(requestToken);
     context.Response.Headers["X-Plex-Client-Identifier"] =
         string.IsNullOrEmpty(clientIdentifier) ? serverOptions.MachineIdentifier : clientIdentifier;
     context.Response.Headers["X-Plex-Machine-Identifier"] = serverOptions.MachineIdentifier;

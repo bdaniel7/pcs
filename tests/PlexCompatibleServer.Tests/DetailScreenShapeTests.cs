@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using PlexCompatibleServer.Api;
 using PlexCompatibleServer.Api.Controllers;
 using PlexCompatibleServer.Api.Options;
 using PlexCompatibleServer.Core.Interfaces;
@@ -41,7 +42,7 @@ public class DetailScreenShapeTests
     public async Task Related_ReturnsPopulatedMovieHub()
     {
         var repo = BuildRepo("art.jpg", "poster.jpg");
-        var controller = WithJsonAccept(new HubController(repo, new ServerOptions()));
+        var controller = WithJsonAccept(new HubController(repo, new ServerOptions(), new ExternalMetadata()));
 
         var result = await controller.Related(8, CancellationToken.None) as ContentResult;
         Assert.That(result, Is.Not.Null);
@@ -95,7 +96,7 @@ public class DetailScreenShapeTests
     public async Task Related_MoreIsEmittedAsBoolean()
     {
         var repo = BuildRepo("art.jpg", "poster.jpg");
-        var controller = WithJsonAccept(new HubController(repo, new ServerOptions()));
+        var controller = WithJsonAccept(new HubController(repo, new ServerOptions(), new ExternalMetadata()));
 
         var result = await controller.Related(8, CancellationToken.None) as ContentResult;
         Assert.That(result, Is.Not.Null);
@@ -188,6 +189,14 @@ public class DetailScreenShapeTests
 
         public Task<MediaItem?> GetItemAsync(int id, CancellationToken ct)
             => Task.FromResult(_libraries.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == id));
+
+        public Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<MediaItem>>(
+                _libraries.Where(x => libraryIds.Contains(x.Id))
+                    .OrderBy(x => x.Id)
+                    .SelectMany(x => x.Items)
+                    .ToList());
+
 
         public Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries, CancellationToken ct)
             => Task.CompletedTask;

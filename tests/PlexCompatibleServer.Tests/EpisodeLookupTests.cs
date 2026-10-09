@@ -10,12 +10,22 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class EpisodeLookupTests
 {
-    private static void ResetSidecarCache()
+    private ExternalMetadata _metadata = null!;
+
+    [SetUp]
+    public void SetUp() => _metadata = new ExternalMetadata();
+
+    private void ResetSidecarCache()
     {
-        typeof(ExternalMetadata)
-            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Static)!
-            .SetValue(null, null);
+        typeof(SidecarStore)
+            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(_metadata.Store, null);
     }
+
+    private void SetCache(ConcurrentDictionary<string, SidecarItem> cache)
+        => typeof(SidecarStore)
+            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(_metadata.Store, cache);
 
     private const string ShowSearchJson = """
     {
@@ -35,13 +45,13 @@ public class EpisodeLookupTests
     [Test]
     public void PickShow_picks_exact_show_and_skips_wrong_types()
     {
-        var rec = ExternalMetadata.PickShow(ShowSearchJson, "Slow Horses");
+        var rec = PlexTvClient.PickShow(ShowSearchJson, "Slow Horses");
         Assert.That(rec, Is.Not.Null);
         Assert.That(rec!.RatingKey, Is.EqualTo("SHOWRK"));
         Assert.That(rec.Title, Is.EqualTo("Slow Horses"));
         Assert.That(rec.Guid, Is.EqualTo("plex://show/REALSHOW"));
 
-        Assert.That(ExternalMetadata.PickShow(ShowSearchJson, "A Completely Different Show"), Is.Null,
+        Assert.That(PlexTvClient.PickShow(ShowSearchJson, "A Completely Different Show"), Is.Null,
             "an unrelated name must not bind to the only show in the results");
     }
 
@@ -53,7 +63,7 @@ public class EpisodeLookupTests
           { "type": "show", "guid": "plex://show/LEAD", "title": "Translated Name",
             "ratingKey": "RK1" } ] } ] } ] } }
         """;
-        var rec = ExternalMetadata.PickShow(leading, "Original Name");
+        var rec = PlexTvClient.PickShow(leading, "Original Name");
         Assert.That(rec, Is.Not.Null);
         Assert.That(rec!.RatingKey, Is.EqualTo("RK1"));
 
@@ -64,7 +74,7 @@ public class EpisodeLookupTests
           { "score": 0.4, "Metadata": [ { "type": "show", "guid": "plex://show/B",
             "title": "Two", "ratingKey": "RKB" } ] } ] } ] } }
         """;
-        Assert.That(ExternalMetadata.PickShow(tied, "Unknown Show"), Is.Null);
+        Assert.That(PlexTvClient.PickShow(tied, "Unknown Show"), Is.Null);
     }
 
     private const string SeasonsJson = """
@@ -77,8 +87,8 @@ public class EpisodeLookupTests
     [Test]
     public void PickSeasonKey_returns_children_key_for_the_parsed_season()
     {
-        Assert.That(ExternalMetadata.PickSeasonKey(SeasonsJson, 6), Is.EqualTo("/library/metadata/S6/children"));
-        Assert.That(ExternalMetadata.PickSeasonKey(SeasonsJson, 1), Is.Null);
+        Assert.That(PlexTvClient.PickSeasonKey(SeasonsJson, 6), Is.EqualTo("/library/metadata/S6/children"));
+        Assert.That(PlexTvClient.PickSeasonKey(SeasonsJson, 1), Is.Null);
     }
 
     private const string EpisodesJson = """
@@ -106,7 +116,7 @@ public class EpisodeLookupTests
     public void PickEpisodeRecord_maps_full_payload_including_hierarchy()
     {
         var parsed = new ParsedEpisodeName { ShowName = "Slow Horses", Season = 6, Episode = 1 };
-        var rec = ExternalMetadata.PickEpisodeRecord(EpisodesJson, 1, parsed);
+        var rec = PlexTvClient.PickEpisodeRecord(EpisodesJson, 1, parsed);
         Assert.That(rec, Is.Not.Null);
 
         Assert.That(rec!.Guid, Is.EqualTo("plex://episode/EP1"));
@@ -147,13 +157,13 @@ public class EpisodeLookupTests
     public void MergeShowDetail_captures_show_poster_without_overwriting_the_episode_one()
     {
         var missing = new SidecarItem { Title = "Come Home" };
-        ExternalMetadata.MergeShowDetail(missing, ShowDetailJson);
+        PlexTvClient.MergeShowDetail(missing, ShowDetailJson);
         Assert.That(missing.GrandparentThumbUrl,
             Is.EqualTo("https://metadata-static.plex.tv/show-poster.jpg"));
         Assert.That(missing.Studio, Is.EqualTo("Apple TV+"));
 
         var captured = new SidecarItem { GrandparentThumbUrl = "https://example/existing.jpg" };
-        ExternalMetadata.MergeShowDetail(captured, ShowDetailJson);
+        PlexTvClient.MergeShowDetail(captured, ShowDetailJson);
         Assert.That(captured.GrandparentThumbUrl, Is.EqualTo("https://example/existing.jpg"),
             "the episode payload's grandparentThumb must win over the show detail fallback");
     }
@@ -162,7 +172,7 @@ public class EpisodeLookupTests
     public void PickEpisodeRecord_maps_credits_and_falls_back_to_parsed_title()
     {
         var parsed = new ParsedEpisodeName { ShowName = "Slow Horses", Season = 6, Episode = 2 };
-        var rec = ExternalMetadata.PickEpisodeRecord(EpisodesJson, 2, parsed);
+        var rec = PlexTvClient.PickEpisodeRecord(EpisodesJson, 2, parsed);
         Assert.That(rec, Is.Not.Null);
 
         Assert.That(rec!.Title, Is.EqualTo("Episode 2"),
@@ -174,11 +184,11 @@ public class EpisodeLookupTests
         Assert.That(rec.Ratings![0].Value, Is.EqualTo(7.6));
         Assert.That(rec.Guids, Is.EqualTo(new[] { "imdb://tt0000002", "tmdb://222" }));
 
-        Assert.That(ExternalMetadata.PickEpisodeRecord(EpisodesJson, 9, parsed), Is.Null);
+        Assert.That(PlexTvClient.PickEpisodeRecord(EpisodesJson, 9, parsed), Is.Null);
     }
 
     [Test]
-    public void FetchRecord_for_episodes_requires_a_parseable_filename_and_never_touches_network()
+    public async Task FetchRecord_for_episodes_requires_a_parseable_filename_and_never_touches_network()
     {
         var showLib = new MediaLibrary { Id = 2, Type = LibraryType.Show, Name = "TV" };
         var unparsable = new MediaItem
@@ -188,10 +198,10 @@ public class EpisodeLookupTests
             Library = showLib,
             FilePath = @"Z:\Ser\NoEpisodeMarker.1080p.mkv"
         };
-        Assert.That(ExternalMetadata.FetchRecord(unparsable), Is.Null);
+        Assert.That(await _metadata.Plex.FetchRecordAsync(unparsable, CancellationToken.None), Is.Null);
 
         var noLibrary = new MediaItem { Id = 2, FilePath = @"Z:\Ser\Some.Show.S01E01.mkv" };
-        Assert.That(ExternalMetadata.FetchRecord(noLibrary), Is.Null);
+        Assert.That(await _metadata.Plex.FetchRecordAsync(noLibrary, CancellationToken.None), Is.Null);
     }
 
     [Test]
@@ -202,9 +212,7 @@ public class EpisodeLookupTests
         {
             var cache = new ConcurrentDictionary<string, SidecarItem>(StringComparer.Ordinal);
             cache["carolinemovie2020"] = new SidecarItem { Title = "Caroline", FileStem = "Caroline.2020" };
-            typeof(ExternalMetadata)
-                .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Static)!
-                .SetValue(null, cache);
+            SetCache(cache);
 
             var episode = new MediaItem
             {
@@ -213,7 +221,7 @@ public class EpisodeLookupTests
                 Title = "Caroline and Friends S01E01.mkv",
                 FilePath = @"Z:\Ser\Caroline and Friends S01E01.mkv"
             };
-            Assert.That(ExternalMetadata.HasRecord(episode), Is.False,
+            Assert.That(_metadata.HasRecord(episode), Is.False,
                 "the episode must not adopt a movie record via title-containment fuzzy matching");
 
             var movie = new MediaItem
@@ -223,7 +231,7 @@ public class EpisodeLookupTests
                 Title = "Caroline.2020.1080p.mkv",
                 FilePath = @"G:\Movies\Caroline.2020.1080p.mkv"
             };
-            Assert.That(ExternalMetadata.HasRecord(movie), Is.True,
+            Assert.That(_metadata.HasRecord(movie), Is.True,
                 "movie fuzzy matching must keep working");
         }
         finally
@@ -233,7 +241,7 @@ public class EpisodeLookupTests
     }
 
     [Test]
-    public void Apply_maps_episode_hierarchy_onto_the_video()
+    public async Task Apply_maps_episode_hierarchy_onto_the_video()
     {
         ResetSidecarCache();
         try
@@ -257,9 +265,7 @@ public class EpisodeLookupTests
                 GrandparentGuid = "plex://show/REALSHOW",
                 DetailChecked = true
             };
-            typeof(ExternalMetadata)
-                .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Static)!
-                .SetValue(null, cache);
+            SetCache(cache);
 
             var item = new MediaItem
             {
@@ -269,7 +275,7 @@ public class EpisodeLookupTests
             };
             var video = new XmlVideo { Title = "Slow Horses S06E02 Porky pyne 1080p" };
 
-            ExternalMetadata.Apply(item, video);
+            await _metadata.ApplyAsync(item, video);
 
             Assert.That(video.Guid, Is.EqualTo("plex://episode/EP2"));
             Assert.That(video.Title, Is.EqualTo("Porky pyne"));
@@ -300,24 +306,24 @@ public class EpisodeLookupTests
     [Test]
     public void ShowBindingKey_strips_the_year_so_dated_and_titleless_files_agree()
     {
-        Assert.That(ExternalMetadata.ShowBindingKey("Dark Matter 2024"),
-            Is.EqualTo(ExternalMetadata.ShowBindingKey("Dark Matter")));
-        Assert.That(ExternalMetadata.ShowBindingKey("Dark Matter"), Is.EqualTo("darkmatter"));
-        Assert.That(ExternalMetadata.ShowBindingKey("Slow Horses"),
-            Is.Not.EqualTo(ExternalMetadata.ShowBindingKey("Dark Matter")));
-        Assert.That(ExternalMetadata.ContainsYearToken("Dark Matter 2024"), Is.True);
-        Assert.That(ExternalMetadata.ContainsYearToken("Dark Matter"), Is.False);
+        Assert.That(MetadataMatcher.ShowBindingKey("Dark Matter 2024"),
+            Is.EqualTo(MetadataMatcher.ShowBindingKey("Dark Matter")));
+        Assert.That(MetadataMatcher.ShowBindingKey("Dark Matter"), Is.EqualTo("darkmatter"));
+        Assert.That(MetadataMatcher.ShowBindingKey("Slow Horses"),
+            Is.Not.EqualTo(MetadataMatcher.ShowBindingKey("Dark Matter")));
+        Assert.That(MetadataMatcher.ContainsYearToken("Dark Matter 2024"), Is.True);
+        Assert.That(MetadataMatcher.ContainsYearToken("Dark Matter"), Is.False);
     }
 
     [Test]
     public void GetShowCandidates_keeps_exact_and_year_suffixed_rivals_and_drops_decoys()
     {
-        var forPlain = ExternalMetadata.GetShowCandidates(DarkMatterSearchJson, "Dark Matter");
+        var forPlain = PlexTvClient.GetShowCandidates(DarkMatterSearchJson, "Dark Matter");
         Assert.That(forPlain.Select(x => x.RatingKey),
             Is.EqualTo(new[] { "RK2015", "RK2024", "RK2011" }),
             "both series sharing the name must reach the disambiguation; the movie decoy must not");
 
-        var forDated = ExternalMetadata.GetShowCandidates(DarkMatterSearchJson, "Dark Matter 2024");
+        var forDated = PlexTvClient.GetShowCandidates(DarkMatterSearchJson, "Dark Matter 2024");
         Assert.That(forDated.Select(x => x.RatingKey),
             Is.EqualTo(new[] { "RK2015", "RK2024" }));
     }
@@ -325,34 +331,34 @@ public class EpisodeLookupTests
     [Test]
     public void PickShowByYear_picks_the_single_year_suffixed_title()
     {
-        var candidates = ExternalMetadata.GetShowCandidates(DarkMatterSearchJson, "Dark Matter 2024");
-        var pick = ExternalMetadata.PickShowByYear(candidates, "Dark Matter 2024");
+        var candidates = PlexTvClient.GetShowCandidates(DarkMatterSearchJson, "Dark Matter 2024");
+        var pick = PlexTvClient.PickShowByYear(candidates, "Dark Matter 2024");
         Assert.That(pick?.RatingKey, Is.EqualTo("RK2024"));
 
-        Assert.That(ExternalMetadata.PickShowByYear(candidates, "Dark Matter"), Is.Null,
+        Assert.That(PlexTvClient.PickShowByYear(candidates, "Dark Matter"), Is.Null,
             "a filename without a year must not guess by year");
-        Assert.That(ExternalMetadata.PickShowByYear(candidates, "Dark Matter 1999"), Is.Null,
+        Assert.That(PlexTvClient.PickShowByYear(candidates, "Dark Matter 1999"), Is.Null,
             "no candidate carries the year -> the caller keeps the plain pick");
     }
 
     [Test]
     public void PickEpisodeTitle_reads_the_episode_and_absent_titles_stay_null()
     {
-        Assert.That(ExternalMetadata.PickEpisodeTitle(EpisodesJson, 1), Is.EqualTo("Come Home"));
-        Assert.That(ExternalMetadata.PickEpisodeTitle(EpisodesJson, 2), Is.Null,
+        Assert.That(PlexTvClient.PickEpisodeTitle(EpisodesJson, 1), Is.EqualTo("Come Home"));
+        Assert.That(PlexTvClient.PickEpisodeTitle(EpisodesJson, 2), Is.Null,
             "a payload without a title must not invent one");
-        Assert.That(ExternalMetadata.PickEpisodeTitle(EpisodesJson, 9), Is.Null);
+        Assert.That(PlexTvClient.PickEpisodeTitle(EpisodesJson, 9), Is.Null);
     }
 
     [Test]
     public void EpisodeTitleMatches_requires_a_distinctive_overlap()
     {
-        Assert.That(ExternalMetadata.EpisodeTitleMatches("Love and Be Loved", "Love and Be Loved"), Is.True);
-        Assert.That(ExternalMetadata.EpisodeTitleMatches("Love and Be Loved 1080p", "Love and Be Loved"), Is.True);
-        Assert.That(ExternalMetadata.EpisodeTitleMatches("The", "The Pyramid"), Is.False,
+        Assert.That(PlexTvClient.EpisodeTitleMatches("Love and Be Loved", "Love and Be Loved"), Is.True);
+        Assert.That(PlexTvClient.EpisodeTitleMatches("Love and Be Loved 1080p", "Love and Be Loved"), Is.True);
+        Assert.That(PlexTvClient.EpisodeTitleMatches("The", "The Pyramid"), Is.False,
             "a fragment too short to be distinctive must not match by prefix");
-        Assert.That(ExternalMetadata.EpisodeTitleMatches("", "Love and Be Loved"), Is.False);
-        Assert.That(ExternalMetadata.EpisodeTitleMatches("We Voted Not to Space You", "Love and Be Loved"), Is.False);
+        Assert.That(PlexTvClient.EpisodeTitleMatches("", "Love and Be Loved"), Is.False);
+        Assert.That(PlexTvClient.EpisodeTitleMatches("We Voted Not to Space You", "Love and Be Loved"), Is.False);
     }
 
     private static string? FakeShowFetch(string url)
@@ -369,7 +375,7 @@ public class EpisodeLookupTests
     }
 
     [Test]
-    public void VerifyByEpisodeTitle_picks_the_show_whose_real_episode_matches_the_filename()
+    public async Task VerifyByEpisodeTitle_picks_the_show_whose_real_episode_matches_the_filename()
     {
         var candidates = new List<SidecarItem>
         {
@@ -384,16 +390,19 @@ public class EpisodeLookupTests
             EpisodeTitle = "Love and Be Loved"
         };
 
-        var pick = ExternalMetadata.VerifyByEpisodeTitle(candidates, parsed, FakeShowFetch);
+        Task<string?> Fetch(string url) => Task.FromResult(FakeShowFetch(url));
+
+        var pick = await PlexTvClient.VerifyByEpisodeTitleAsync(candidates, parsed, (url, _) => Fetch(url), CancellationToken.None);
         Assert.That(pick?.RatingKey, Is.EqualTo("SHOWB"),
             "the candidate whose S02E05 carries the filename's title must win");
 
         parsed.EpisodeTitle = "A Title Neither Show Has";
-        Assert.That(ExternalMetadata.VerifyByEpisodeTitle(candidates, parsed, FakeShowFetch), Is.Null,
+        Assert.That(await PlexTvClient.VerifyByEpisodeTitleAsync(candidates, parsed, (url, _) => Fetch(url), CancellationToken.None), Is.Null,
             "no match -> the caller keeps the plain pick and binds nothing");
 
-        Assert.That(ExternalMetadata.VerifyByEpisodeTitle(
-            candidates, parsed, _ => null), Is.Null, "failed fetches must not count as a match");
+        Assert.That(await PlexTvClient.VerifyByEpisodeTitleAsync(
+            candidates, parsed, (_, _) => Task.FromResult<string?>(null), CancellationToken.None), Is.Null,
+            "failed fetches must not count as a match");
     }
 
     [Test]
@@ -406,7 +415,7 @@ public class EpisodeLookupTests
         var dated = new MediaItem { Library = showLib, FilePath = @"Z:\Ser\Dark.Matter.2024.S02E06.mkv" };
         var movie = new MediaItem { Library = movieLib, FilePath = @"G:\Movies\Some.Movie.2024.mkv" };
 
-        var ordered = ExternalMetadata.OrderLookupPasses(new[] { titleless, titled, movie, dated });
+        var ordered = MetadataMatcher.OrderLookupPasses(new[] { titleless, titled, movie, dated });
 
         Assert.That(ordered, Is.EqualTo(new[] { titled, dated, titleless, movie }),
             "year- and title-bearing episodes must establish the show binding first");
@@ -418,27 +427,28 @@ public class EpisodeLookupTests
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         var path = Path.Combine(wwwroot, "plex-show-bindings.json");
         var key = "zzbindingtest" + Guid.NewGuid().ToString("N")[..8];
-        var bindings = typeof(ExternalMetadata).GetField("_showBindings", BindingFlags.NonPublic | BindingFlags.Static);
-        var previous = bindings!.GetValue(null);
-        bindings.SetValue(null, null);
+        var bindings = typeof(SidecarStore).GetField("_showBindings", BindingFlags.NonPublic | BindingFlags.Instance);
+        var previous = bindings!.GetValue(_metadata.Store);
+        bindings.SetValue(_metadata.Store, null);
         try
         {
-            ExternalMetadata.SaveShowBinding(key, new SidecarItem
+            _metadata.Store.SaveShowBinding(key, new SidecarItem
             {
                 Title = "Dark Matter (2024)",
                 RatingKey = "5fd2a1b82de5fd002dd4c7b1"
             });
 
             Assert.That(File.Exists(path), Is.True, "binding file must be written");
-            bindings.SetValue(null, null);
-            var reloaded = ExternalMetadata.GetShowBinding(key);
+            bindings.SetValue(_metadata.Store, null);
+            var reloaded = _metadata.Store.GetShowBinding(key);
             Assert.That(reloaded?.RatingKey, Is.EqualTo("5fd2a1b82de5fd002dd4c7b1"),
                 "a fresh process must read the binding back from disk");
         }
         finally
         {
-            bindings.SetValue(null, previous);
+            bindings.SetValue(_metadata.Store, previous);
             try { if (File.Exists(path)) File.Delete(path); } catch { }
         }
     }
 }
+

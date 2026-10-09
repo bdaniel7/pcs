@@ -144,6 +144,17 @@ public sealed class MediaDurationProbeTests
     }
 
     [Test]
+    public async Task Async_probe_matches_sync_probe()
+    {
+        var path = Path.Combine(_directory, "async.mp4");
+        WriteIsoBaseMedia(path, version: 0, timescale: 1000, duration: 3_661_000);
+
+        Assert.That(await MediaDurationProbe.GetDurationMsAsync(path, CancellationToken.None), Is.EqualTo(3_661_000));
+        Assert.That(await MediaDurationProbe.GetDurationMsAsync(
+            Path.Combine(_directory, "missing.mp4"), CancellationToken.None), Is.Null);
+    }
+
+    [Test]
     public void ReturnsNullForUnknownContainer()
     {
         var path = Path.Combine(_directory, "video.avi");

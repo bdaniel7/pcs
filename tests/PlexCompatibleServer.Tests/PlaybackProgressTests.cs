@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
+using PlexCompatibleServer.Api;
 using PlexCompatibleServer.Api.Controllers;
 using PlexCompatibleServer.Api.Options;
 using PlexCompatibleServer.Api.Serialization;
+using PlexCompatibleServer.Core.Interfaces;
 using PlexCompatibleServer.Core.Models;
 using PlexCompatibleServer.Infrastructure.Data;
 
@@ -200,7 +202,7 @@ public class PlaybackProgressTests
         Assert.That(inProgress.Select(x => x.Title), Is.EqualTo(new[] { "Movie Two Thousand" }),
             "only the half-watched item qualifies for the shelf");
 
-        var hub = new HubController(_repo, new ServerOptions())
+        var hub = new HubController(_repo, new ServerOptions(), new ExternalMetadata())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -223,7 +225,7 @@ public class PlaybackProgressTests
             ratingKey: _movie.Id, key: "", time: 36980, duration: 6416960,
             state: "playing", playQueueItemID: 1);
 
-        var hub = new HubController(_repo, new ServerOptions())
+        var hub = new HubController(_repo, new ServerOptions(), new ExternalMetadata())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };

@@ -15,17 +15,20 @@ public sealed class LibraryController : ControllerBase
     private readonly MediaScanTrigger _trigger;
     private readonly ServerOptions _options;
     private readonly StreamSelectionStore _selections;
+    private readonly IMetadataService _metadata;
 
     public LibraryController(
         IMediaRepository repo,
         MediaScanTrigger trigger,
         ServerOptions options,
-        StreamSelectionStore selections)
+        StreamSelectionStore selections,
+        IMetadataService metadata)
     {
         _repo = repo;
         _trigger = trigger;
         _options = options;
         _selections = selections;
+        _metadata = metadata;
     }
 
     [HttpGet("/library")]
@@ -86,7 +89,7 @@ public sealed class LibraryController : ControllerBase
             TotalSize = total.ToString(),
             LibrarySectionID = library.Id.ToString(),
             LibrarySectionTitle = library.Name,
-            Videos = items.Select(x => ToVideoEnriched(x, selections: _selections)).ToList()
+            Videos = items.Select(x => ToVideoEnriched(_metadata, x, selections: _selections)).ToList()
         };
         return PlexResults.Container(this, result);
     }
@@ -96,11 +99,7 @@ public sealed class LibraryController : ControllerBase
     public async Task<IActionResult> RecentlyAddedAll(CancellationToken ct)
     {
         var libraries = await _repo.GetLibrariesAsync(ct);
-        var items = new List<MediaItem>();
-        foreach (var library in libraries)
-        {
-            items.AddRange(await _repo.GetItemsAsync(library.Id, ct));
-        }
+        var items = await _repo.GetItemsByLibrariesAsync(libraries.Select(x => x.Id).ToList(), ct);
 
         var recent = items
             .OrderByDescending(x => x.UpdatedAt)
@@ -112,7 +111,7 @@ public sealed class LibraryController : ControllerBase
             Size = recent.Count,
             MixedParents = "1",
             TotalSize = recent.Count.ToString(),
-            Videos = recent.Select(x => ToVideoEnriched(x, selections: _selections)).ToList()
+            Videos = recent.Select(x => ToVideoEnriched(_metadata, x, selections: _selections)).ToList()
         });
     }
 
@@ -136,7 +135,7 @@ public sealed class LibraryController : ControllerBase
             LibrarySectionTitle = library.Name,
             MixedParents = "1",
             TotalSize = recent.Count.ToString(),
-            Videos = recent.Select(x => ToVideoEnriched(x, selections: _selections)).ToList()
+            Videos = recent.Select(x => ToVideoEnriched(_metadata, x, selections: _selections)).ToList()
         });
     }
 
@@ -323,6 +322,7 @@ public sealed class LibraryController : ControllerBase
     /// backfill keeps them covered; a miss simply keeps the file-name title.
     /// </summary>
     internal static XmlVideo ToVideoEnriched(
+        IMetadataService metadata,
         MediaItem x,
         bool includeLibrarySection = true,
         StreamSelectionStore? selections = null)
@@ -330,7 +330,8 @@ public sealed class LibraryController : ControllerBase
         var video = ToVideo(x, includeLibrarySection, selections);
         try
         {
-            ExternalMetadata.Apply(x, video, allowNetwork: false);
+            var rec = metadata.ResolveLocal(x, video.Title, video.TitleSort);
+            if (rec is not null) MetadataMapper.Overlay(x, video, rec);
         }
         catch (Exception)
         {

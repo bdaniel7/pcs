@@ -1,5 +1,6 @@
 using System;
 using PlexCompatibleServer.Api.Serialization;
+using PlexCompatibleServer.Core.Interfaces;
 using PlexCompatibleServer.Core.Models;
 
 namespace PlexCompatibleServer.Api.Controllers;
@@ -22,12 +23,22 @@ internal static class MetadataParity
     /// True to state the empty Extras container. Official Plex emits it on detail responses;
     /// hub rows omit it.
     /// </param>
-    public static void Apply(MediaItem item, XmlVideo video, int ratingKey, bool includeExtras)
+    /// <param name="allowNetwork">
+    /// True for detail responses, which may resolve a cache miss against plex.tv. False keeps the
+    /// overlay strictly on the loaded stores and never waits on the network.
+    /// </param>
+    public static async Task ApplyAsync(IMetadataService metadata, MediaItem item, XmlVideo video,
+                                        int ratingKey, bool includeExtras,
+                                        bool allowNetwork = true, CancellationToken ct = default)
     {
         // Overlay real metadata from the official Plex sidecar when available.
         try
         {
-            ExternalMetadata.Apply(item, video);
+            var rec = allowNetwork
+                ? await metadata.ResolveAsync(item, video.Title, video.TitleSort, ct).ConfigureAwait(false)
+                : metadata.ResolveLocal(item, video.Title, video.TitleSort);
+
+            if (rec is not null) MetadataMapper.Overlay(item, video, rec);
         }
         catch (Exception)
         {
