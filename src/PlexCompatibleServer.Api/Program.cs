@@ -63,15 +63,28 @@ builder.Services.AddHostedService<MediaScanHostedService>();
 builder.Services.AddHostedService<MetadataSyncHostedService>();
 builder.Services.AddControllers();
 
+// CORS only matters to browser callers (native clients ignore it and the built-in /web UI is
+// same-origin). An unauthenticated POC gains nothing from locking it down, so the default allows
+// any origin; restrict via Cors:AllowedOrigins when the deployment warrants it.
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? new[] { "*" };
+
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy => policy
-        .AllowAnyOrigin()
-        .AllowAnyMethod()
-        .AllowAnyHeader()
-        .WithExposedHeaders("X-Plex-Protocol", "X-Plex-Platform", "X-Plex-Product",
-            "X-Plex-Version", "X-Plex-Device", "X-Plex-Client-Identifier",
-            "X-Plex-Machine-Identifier", "X-Plex-Server-Identifier"));
+    options.AddDefaultPolicy(policy =>
+    {
+        if (allowedOrigins.Length == 0 || allowedOrigins.Contains("*"))
+            policy.AllowAnyOrigin();
+        else
+            policy.WithOrigins(allowedOrigins);
+
+        policy
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .WithExposedHeaders("X-Plex-Protocol", "X-Plex-Platform", "X-Plex-Product",
+                "X-Plex-Version", "X-Plex-Device", "X-Plex-Client-Identifier",
+                "X-Plex-Machine-Identifier", "X-Plex-Server-Identifier");
+    });
 });
 
 var app = builder.Build();
@@ -126,11 +139,10 @@ if (app.Configuration.GetValue<bool>("Diagnostics:LogRequests"))
     {
         var remote = context.Connection.RemoteIpAddress?.ToString() ?? "?";
         var accept = context.Request.Headers.Accept.ToString();
-        var target = context.Request.Path + context.Request.QueryString;
 
-        // Truncated, but far enough out that the meaningful parameters (path, subtitles,
-        // session) past the long X-Plex-Client-Profile-Extra blob stay visible.
-        if (target.Length > 4000) target = target[..4000] + "...";
+        // The token never reaches the log: RequestLog strips it from both the request line and the
+        // identity dump, whether it travelled as a header or a query parameter.
+        var target = RequestLog.DescribeTarget(context);
 
         app.Logger.LogInformation(
             "REQ {Method} {Target} from={Remote} accept={Accept}",
@@ -138,14 +150,7 @@ if (app.Configuration.GetValue<bool>("Diagnostics:LogRequests"))
 
         // Plex clients identify themselves with X-Plex-* headers, and the auth token may be a query
         // parameter rather than a header. Log both so an unexpected client is recognisable.
-        var identity = context.Request.Headers
-            .Where(h => h.Key.StartsWith("X-Plex-", StringComparison.OrdinalIgnoreCase))
-            .Select(h => $"{h.Key}={h.Value}")
-            .Concat(context.Request.Query
-                .Where(q => q.Key.StartsWith("X-Plex-", StringComparison.OrdinalIgnoreCase))
-                .Select(q => $"{q.Key}={q.Value}"));
-
-        var described = string.Join(" ", identity);
+        var described = RequestLog.DescribeIdentity(context);
 
         if (described.Length > 0) app.Logger.LogInformation("  IDENT {Ident}", described);
 

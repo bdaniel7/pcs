@@ -117,21 +117,21 @@ public static class MediaStreamProbe
         }
         catch (OperationCanceledException)
         {
-            return null!;
+            return null;
         }
         catch (Exception ex)
         {
             ProbeFailure = ex.ToString();
-            return null!;
+            return null;
         }
     }
 
     /// <summary>Last probe failure, for diagnostics only.</summary>
     public static string ProbeFailure { get; private set; } = "";
 
-    private static MediaFileInfo Parse(string json, string path)
+    private static MediaFileInfo? Parse(string json, string path)
     {
-        if (string.IsNullOrWhiteSpace(json)) return null!;
+        if (string.IsNullOrWhiteSpace(json)) return null;
 
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;

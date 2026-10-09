@@ -16,6 +16,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{7F49A4A8-F
 		README.md = README.md
 		FIX_PLAN.md = FIX_PLAN.md
 		CODE_REVIEW.md = CODE_REVIEW.md
+		install.sh = install.sh
 	EndProjectSection
 EndProject
 Global

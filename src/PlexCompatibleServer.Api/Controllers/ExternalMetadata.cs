@@ -7,8 +7,8 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using PlexCompatibleServer.Core.Models;
 using PlexCompatibleServer.Api.Serialization;
+using PlexCompatibleServer.Core.Models;
 
 namespace PlexCompatibleServer.Api.Controllers;
 
@@ -93,22 +93,6 @@ internal static class ExternalMetadata
         {
             rec ??= Get(video.Title ?? string.Empty);
             rec ??= Get(video.Title?.ToLowerInvariant() ?? string.Empty);
-            var vtn = (video.Title ?? "").ToLowerInvariant();
-
-            if (rec is null && _cache != null && vtn.Contains("oak") && vtn.Contains("street"))
-            {
-                foreach (var kv in _cache)
-                {
-                    var ct = (kv.Value.Title ?? "").ToLowerInvariant();
-
-                    if (ct.Contains("oak") && ct.Contains("street") || ((kv.Value.Title ?? "").Contains("End of Oak Street")))
-                    {
-                        rec = kv.Value;
-
-                        break;
-                    }
-                }
-            }
         }
 
         {
@@ -552,9 +536,13 @@ internal static class ExternalMetadata
                                      string kind,
                                      string? tag)
     {
-        var h = (tag ?? kind).GetHashCode();
+        // SHA-256 over the stable inputs; string.GetHashCode() is randomised per process, so tag
+        // ids used to change on every restart and churn client caches.
+        var input = string.Create(CultureInfo.InvariantCulture, $"{seed}|{kind}|{tag}");
+        var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        var value = BitConverter.ToUInt32(hash, 0);
 
-        return (Math.Abs(seed * 131542391 + h) % 1000000).ToString(CultureInfo.InvariantCulture);
+        return (value % 1_000_000).ToString(CultureInfo.InvariantCulture);
     }
 
     private static string? ResolveSidecarPath()
@@ -1398,16 +1386,10 @@ internal static class ExternalMetadata
 
             if (File.Exists(path))
             {
-                try
-                {
-                    dict = JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(
-                                                                                       File.ReadAllText(path), Options) ?? dict;
-                }
-                catch
-                {
-                    // Never overwrite a sidecar that no longer parses - that would destroy data.
-                    throw;
-                }
+                // Let a malformed sidecar throw rather than overwriting it with a partial cache:
+                // losing the file would be worse than a failed write.
+                dict = JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(
+                                                                                   File.ReadAllText(path), Options) ?? dict;
             }
             dict[key] = rec;
             var writeOptions = new JsonSerializerOptions(Options) { WriteIndented = true };

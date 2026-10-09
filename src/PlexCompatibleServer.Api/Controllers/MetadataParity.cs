@@ -1,6 +1,6 @@
 using System;
-using PlexCompatibleServer.Core.Models;
 using PlexCompatibleServer.Api.Serialization;
+using PlexCompatibleServer.Core.Models;
 
 namespace PlexCompatibleServer.Api.Controllers;
 

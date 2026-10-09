@@ -1,9 +1,9 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PlexCompatibleServer.Core.Interfaces;
 using PlexCompatibleServer.Core.Models;
 using PlexCompatibleServer.Infrastructure.Media;
-using System.Text.RegularExpressions;
 
 namespace PlexCompatibleServer.Infrastructure.Data;
 

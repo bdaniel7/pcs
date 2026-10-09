@@ -85,6 +85,8 @@ public sealed class MediaDbContext : DbContext
 
         foreach (var (table, column, definition) in additive)
         {
+            EnsureSafeIdentifier(table, "table");
+            EnsureSafeIdentifier(column, "column");
             if (await HasColumnAsync(table, column, ct)) continue;
 
             // The statement is assembled from the fixed additive list above - table, column and
@@ -136,6 +138,26 @@ public sealed class MediaDbContext : DbContext
         finally
         {
             if (shouldClose) await connection.CloseAsync();
+        }
+    }
+
+    /// <summary>
+    /// Guards the only place raw SQL is assembled from identifiers. The additive list is fixed, but
+    /// this makes it impossible for a future change to interpolate an unvalidated table/column.
+    /// </summary>
+    private static void EnsureSafeIdentifier(string identifier, string kind)
+    {
+        var inner = identifier.StartsWith('[') && identifier.EndsWith(']')
+            ? identifier[1..^1]
+            : identifier;
+
+        if (inner.Length == 0)
+            throw new InvalidOperationException($"Empty {kind} used in schema migration.");
+
+        foreach (var c in inner)
+        {
+            if (!(char.IsLetterOrDigit(c) || c == '_'))
+                throw new InvalidOperationException($"Unsafe {kind} '{identifier}' used in schema migration.");
         }
     }
 
