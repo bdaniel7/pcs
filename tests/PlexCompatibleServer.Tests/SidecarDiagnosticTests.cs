@@ -9,25 +9,32 @@ namespace PlexCompatibleServer.Tests;
 
 public class SidecarDiagnosticTests
 {
-    private static string findApiProjectDir()
+    static string findApiProjectDir()
     {
         var dir = TestContext.CurrentContext.TestDirectory;
+
         while (dir is not null && !File.Exists(Path.Combine(dir, "PlexCompatibleServer.sln")))
+        {
             dir = Path.GetDirectoryName(dir);
+        }
         Assert.That(dir, Is.Not.Null, "repo root not found");
+
         return Path.Combine(dir!, "src", "PlexCompatibleServer.Api");
     }
 
-    private ExternalMetadata metadata = null!;
+    ExternalMetadata metadata = null!;
 
     [SetUp]
-    public void SetUp() => metadata = new ExternalMetadata();
+    public void SetUp()
+    {
+        metadata = new ExternalMetadata();
+    }
 
-    private void resetSidecarCache()
+    void resetSidecarCache()
     {
         typeof(SidecarStore)
-            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(metadata.Store, null);
+               .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
+               .SetValue(metadata.Store, null);
     }
 
     [Test]
@@ -38,7 +45,7 @@ public class SidecarDiagnosticTests
         try
         {
             var dict = JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(
-                File.ReadAllText(path), SidecarStore.Options);
+                                                                                   File.ReadAllText(path), SidecarStore.Options);
             TestContext.WriteLine($"loaded {dict!.Count} entries");
             Assert.That(dict.Count, Is.GreaterThan(0));
         }
@@ -54,15 +61,20 @@ public class SidecarDiagnosticTests
         var prev = Directory.GetCurrentDirectory();
         Directory.SetCurrentDirectory(findApiProjectDir());
         resetSidecarCache();
+
         try
         {
             var item = new MediaItem
-            {
-                Id = 9,
-                Title = "Disclosure Day 2026",
-                FilePath = @"Z:\Ser\gogo.mkv"
-            };
-            var video = new XmlVideo { Title = item.Title };
+                       {
+                               Id = 9,
+                               Title = "Disclosure Day 2026",
+                               FilePath = @"Z:\Ser\gogo.mkv"
+                       };
+
+            var video = new XmlVideo
+                        {
+                                Title = item.Title
+                        };
 
             try
             {
@@ -74,7 +86,7 @@ public class SidecarDiagnosticTests
             }
 
             Assert.That(video.Summary, Is.Not.Empty,
-                $"no sidecar match: guid={video.Guid} studio='{video.Studio}' titleSort='{video.TitleSort}'");
+                        $"no sidecar match: guid={video.Guid} studio='{video.Studio}' titleSort='{video.TitleSort}'");
             TestContext.WriteLine($"summary len={video.Summary?.Length} guid={video.Guid} studio='{video.Studio}'");
         }
         finally

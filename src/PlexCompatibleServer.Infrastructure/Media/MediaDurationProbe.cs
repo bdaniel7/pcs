@@ -4,15 +4,15 @@ namespace PlexCompatibleServer.Infrastructure.Media;
 
 public static class MediaDurationProbe
 {
-    private const ulong EBML_HEADER = 0x1A45DFA3;
-    private const ulong EBML_SEGMENT = 0x18538067;
-    private const ulong EBML_INFO = 0x1549A966;
-    private const ulong EBML_TIMECODE_SCALE = 0x2AD7B1;
-    private const ulong EBML_DURATION = 0x4489;
-    private const ulong EBML_UNKNOWN_SIZE = ulong.MaxValue;
+    const ulong EBML_HEADER = 0x1A45DFA3;
+    const ulong EBML_SEGMENT = 0x18538067;
+    const ulong EBML_INFO = 0x1549A966;
+    const ulong EBML_TIMECODE_SCALE = 0x2AD7B1;
+    const ulong EBML_DURATION = 0x4489;
+    const ulong EBML_UNKNOWN_SIZE = ulong.MaxValue;
 
-    private static readonly uint boxMoov = fourCc("moov");
-    private static readonly uint boxMvhd = fourCc("mvhd");
+    static readonly uint boxMoov = fourCc("moov");
+    static readonly uint boxMvhd = fourCc("mvhd");
 
     public static int? GetDurationMs(string path)
     {
@@ -21,16 +21,24 @@ public static class MediaDurationProbe
             // No SequentialScan hint: the probe seeks between the start of the
             // file and a trailing 'moov'/'Info', which that hint penalises.
             using var stream = new FileStream(
-                path, FileMode.Open, FileAccess.Read, FileShare.Read,
-                bufferSize: 64 * 1024);
+                                              path, FileMode.Open, FileAccess.Read, FileShare.Read,
+                                              64 * 1024);
 
-            if (stream.Length < 8) return null;
+            if (stream.Length < 8)
+            {
+                return null;
+            }
 
             var duration = tryReadMatroska(stream);
-            if (duration != 0) return duration;
+
+            if (duration != 0)
+            {
+                return duration;
+            }
 
             stream.Position = 0;
             var isoDuration = tryReadIsoBaseMedia(stream);
+
             return isoDuration != 0 ? isoDuration : null;
         }
         catch (IOException) { return null; }
@@ -39,32 +47,56 @@ public static class MediaDurationProbe
     }
 
     /// <summary>
-    /// Same probe, but the file seek/read runs on the thread pool so a scan never blocks the
-    /// caller's thread. Cancellation is only observed before the work is scheduled: the probe
-    /// itself is short and does not poll the token.
+    ///     Same probe, but the file seek/read runs on the thread pool so a scan never blocks the
+    ///     caller's thread. Cancellation is only observed before the work is scheduled: the probe
+    ///     itself is short and does not poll the token.
     /// </summary>
-    public static Task<int?> GetDurationMsAsync(string path, CancellationToken ct)
-        => Task.Run(() => GetDurationMs(path), ct);
-
-
-    private static int tryReadMatroska(Stream stream)
+    public static Task<int?> GetDurationMsAsync(string path,
+                                                CancellationToken ct)
     {
-        if (!tryReadEbmlId(stream, out var id) || id != EBML_HEADER) return 0;
-        if (!tryReadEbmlSize(stream, out var size)) return 0;
+        return Task.Run(() => GetDurationMs(path), ct);
+    }
+
+
+    static int tryReadMatroska(Stream stream)
+    {
+        if (!tryReadEbmlId(stream, out var id) || id != EBML_HEADER)
+        {
+            return 0;
+        }
+
+        if (!tryReadEbmlSize(stream, out var size))
+        {
+            return 0;
+        }
 
         var headerEnd = endOf(stream.Position, size);
-        if (headerEnd <= stream.Position) return 0;
+
+        if (headerEnd <= stream.Position)
+        {
+            return 0;
+        }
         stream.Position = headerEnd;
 
         while (stream.Position + 2 <= stream.Length)
         {
-            if (!tryReadEbmlId(stream, out id) || !tryReadEbmlSize(stream, out size)) return 0;
+            if (!tryReadEbmlId(stream, out id) || !tryReadEbmlSize(stream, out size))
+            {
+                return 0;
+            }
 
             var bodyStart = stream.Position;
             var bodyEnd = endOf(bodyStart, size);
-            if (bodyEnd <= bodyStart) return 0;
 
-            if (id == EBML_SEGMENT) return tryReadSegment(stream, bodyEnd);
+            if (bodyEnd <= bodyStart)
+            {
+                return 0;
+            }
+
+            if (id == EBML_SEGMENT)
+            {
+                return tryReadSegment(stream, bodyEnd);
+            }
 
             stream.Position = bodyEnd;
         }
@@ -72,17 +104,28 @@ public static class MediaDurationProbe
         return 0;
     }
 
-    private static int tryReadSegment(Stream stream, long segmentEnd)
+    static int tryReadSegment(Stream stream,
+                              long segmentEnd)
     {
         while (stream.Position + 2 <= segmentEnd)
         {
-            if (!tryReadEbmlId(stream, out var childId) || !tryReadEbmlSize(stream, out var childSize)) return 0;
+            if (!tryReadEbmlId(stream, out var childId) || !tryReadEbmlSize(stream, out var childSize))
+            {
+                return 0;
+            }
 
             var bodyStart = stream.Position;
             var bodyEnd = endOf(bodyStart, childSize, segmentEnd);
-            if (bodyEnd <= bodyStart) return 0;
 
-            if (childId == EBML_INFO) return tryReadMatroskaInfo(stream, bodyEnd);
+            if (bodyEnd <= bodyStart)
+            {
+                return 0;
+            }
+
+            if (childId == EBML_INFO)
+            {
+                return tryReadMatroskaInfo(stream, bodyEnd);
+            }
 
             stream.Position = bodyEnd;
         }
@@ -90,44 +133,68 @@ public static class MediaDurationProbe
         return 0;
     }
 
-    private static int tryReadMatroskaInfo(Stream stream, long infoEnd)
+    static int tryReadMatroskaInfo(Stream stream,
+                                   long infoEnd)
     {
         var timecodeScale = 1_000_000d;
         double ticks = -1;
 
         while (stream.Position + 2 <= infoEnd)
         {
-            if (!tryReadEbmlId(stream, out var id) || !tryReadEbmlSize(stream, out var size)) return 0;
+            if (!tryReadEbmlId(stream, out var id) || !tryReadEbmlSize(stream, out var size))
+            {
+                return 0;
+            }
 
             var bodyStart = stream.Position;
             var bodyEnd = endOf(bodyStart, size, infoEnd);
-            if (bodyEnd <= bodyStart) return 0;
+
+            if (bodyEnd <= bodyStart)
+            {
+                return 0;
+            }
 
             if (id == EBML_TIMECODE_SCALE && size <= 8)
             {
-                if (!tryReadUIntBe(stream, (int)size, out var scale)) return 0;
-                if (scale > 0) timecodeScale = scale;
+                if (!tryReadUIntBe(stream, (int)size, out var scale))
+                {
+                    return 0;
+                }
+
+                if (scale > 0)
+                {
+                    timecodeScale = scale;
+                }
             }
             else if (id == EBML_DURATION && size == 4)
             {
-                if (!tryReadSingle(stream, out var value)) return 0;
+                if (!tryReadSingle(stream, out var value))
+                {
+                    return 0;
+                }
                 ticks = value;
             }
             else if (id == EBML_DURATION && size == 8)
             {
-                if (!tryReadDouble(stream, out var value)) return 0;
+                if (!tryReadDouble(stream, out var value))
+                {
+                    return 0;
+                }
                 ticks = value;
             }
 
             stream.Position = bodyEnd;
         }
 
-        if (ticks < 0) return 0;
+        if (ticks < 0)
+        {
+            return 0;
+        }
 
         return toMilliseconds(ticks * timecodeScale / 1_000_000d);
     }
 
-    private static int tryReadIsoBaseMedia(Stream stream)
+    static int tryReadIsoBaseMedia(Stream stream)
     {
         // 'moov' is often written after 'mdat' by streaming-friendly muxers, which
         // places it far past any small header window in large files. Walking
@@ -137,81 +204,140 @@ public static class MediaDurationProbe
 
         for (var i = 0; i < MAX_TOP_LEVEL_BOXES && stream.Position + 8 <= stream.Length; i++)
         {
-            if (!tryReadBox(stream, stream.Length, out var box)) return 0;
-            if (box.Type == boxMoov) return tryReadMoov(stream, box.BodyEnd);
+            if (!tryReadBox(stream, stream.Length, out var box))
+            {
+                return 0;
+            }
+
+            if (box.Type == boxMoov)
+            {
+                return tryReadMoov(stream, box.BodyEnd);
+            }
 
             // A zero-length payload is legal (for example an 8-byte 'free'
             // box), so only stop when the box failed to advance at all.
-            if (box.BodyEnd < box.BodyStart) return 0;
+            if (box.BodyEnd < box.BodyStart)
+            {
+                return 0;
+            }
             stream.Position = box.BodyEnd;
         }
 
         return 0;
     }
 
-    private static int tryReadMoov(Stream stream, long moovEnd)
+    static int tryReadMoov(Stream stream,
+                           long moovEnd)
     {
         while (stream.Position + 8 <= moovEnd)
         {
-            if (!tryReadBox(stream, moovEnd, out var box)) return 0;
-            if (box.Type == boxMvhd) return tryReadMvhd(stream, box);
+            if (!tryReadBox(stream, moovEnd, out var box))
+            {
+                return 0;
+            }
+
+            if (box.Type == boxMvhd)
+            {
+                return tryReadMvhd(stream, box);
+            }
 
             // Zero-length children are legal; only bail if nothing was consumed.
-            if (box.BodyEnd < box.BodyStart) return 0;
+            if (box.BodyEnd < box.BodyStart)
+            {
+                return 0;
+            }
             stream.Position = box.BodyEnd;
         }
 
         return 0;
     }
 
-    private static int tryReadMvhd(Stream stream, Box box)
+    static int tryReadMvhd(Stream stream,
+                           Box box)
     {
         stream.Position = box.BodyStart;
 
         var version = stream.ReadByte();
-        if (version < 0) return 0;
+
+        if (version < 0)
+        {
+            return 0;
+        }
         stream.Position += 3;
 
         var wide = version == 1;
         var creationSize = wide ? 8 : 4;
 
         stream.Position += creationSize * 2;
-        if (stream.Position + (wide ? 12 : 8) > box.BodyEnd) return 0;
 
-        if (!tryReadUInt32(stream, out var timescale)) return 0;
+        if (stream.Position + (wide ? 12 : 8) > box.BodyEnd)
+        {
+            return 0;
+        }
+
+        if (!tryReadUInt32(stream, out var timescale))
+        {
+            return 0;
+        }
 
         ulong duration;
+
         if (wide)
         {
-            if (!tryReadUInt64(stream, out duration)) return 0;
+            if (!tryReadUInt64(stream, out duration))
+            {
+                return 0;
+            }
         }
         else
         {
-            if (!tryReadUInt32(stream, out var narrow)) return 0;
+            if (!tryReadUInt32(stream, out var narrow))
+            {
+                return 0;
+            }
             duration = narrow;
         }
 
-        if (timescale == 0 || duration == 0) return 0;
+        if (timescale == 0 || duration == 0)
+        {
+            return 0;
+        }
 
         return toMilliseconds(duration * 1000d / timescale);
     }
 
-    private static bool tryReadBox(Stream stream, long limit, out Box box)
+    static bool tryReadBox(Stream stream,
+                           long limit,
+                           out Box box)
     {
         box = default;
 
         var start = stream.Position;
-        if (start + 8 > limit) return false;
 
-        if (!tryReadUInt32(stream, out var size)) return false;
-        if (!tryReadUInt32(stream, out var type)) return false;
+        if (start + 8 > limit)
+        {
+            return false;
+        }
+
+        if (!tryReadUInt32(stream, out var size))
+        {
+            return false;
+        }
+
+        if (!tryReadUInt32(stream, out var type))
+        {
+            return false;
+        }
 
         var headerSize = 8;
         long boxSize;
 
         if (size == 1)
         {
-            if (!tryReadUInt64(stream, out var large) || large > long.MaxValue) return false;
+            if (!tryReadUInt64(stream, out var large) || large > long.MaxValue)
+            {
+                return false;
+            }
             boxSize = (long)large;
             headerSize = 16;
         }
@@ -224,44 +350,80 @@ public static class MediaDurationProbe
             boxSize = size;
         }
 
-        if (boxSize < headerSize) return false;
+        if (boxSize < headerSize)
+        {
+            return false;
+        }
 
         var end = start + boxSize;
-        if (end < start) end = limit;
+
+        if (end < start)
+        {
+            end = limit;
+        }
         end = Math.Min(end, limit);
-        if (end < start + headerSize) return false;
+
+        if (end < start + headerSize)
+        {
+            return false;
+        }
 
         box = new Box(type, start + headerSize, end);
+
         return true;
     }
 
-    private static bool tryReadEbmlId(Stream stream, out ulong value) => tryReadEbmlVint(stream, stripMarker: false, out value, out _);
+    static bool tryReadEbmlId(Stream stream,
+                              out ulong value)
+    {
+        return tryReadEbmlVint(stream, false, out value, out _);
+    }
 
-    private static bool tryReadEbmlSize(Stream stream, out ulong value) => tryReadEbmlVint(stream, stripMarker: true, out value, out _);
+    static bool tryReadEbmlSize(Stream stream,
+                                out ulong value)
+    {
+        return tryReadEbmlVint(stream, true, out value, out _);
+    }
 
-    private static bool tryReadEbmlVint(Stream stream, bool stripMarker, out ulong value, out int length)
+    static bool tryReadEbmlVint(Stream stream,
+                                bool stripMarker,
+                                out ulong value,
+                                out int length)
     {
         value = 0;
         length = 0;
 
         var first = stream.ReadByte();
-        if (first < 0) return false;
+
+        if (first < 0)
+        {
+            return false;
+        }
 
         var width = 1;
         var mask = 0x80;
+
         while (width <= 8 && (first & mask) == 0)
         {
             mask >>= 1;
             width++;
         }
 
-        if (width > 8) return false;
+        if (width > 8)
+        {
+            return false;
+        }
 
         value = (ulong)(stripMarker ? first & (mask - 1) : first);
+
         for (var i = 1; i < width; i++)
         {
             var next = stream.ReadByte();
-            if (next < 0) return false;
+
+            if (next < 0)
+            {
+                return false;
+            }
             value = (value << 8) | (byte)next;
         }
 
@@ -271,97 +433,177 @@ public static class MediaDurationProbe
             // unknown-size marker. For width 8 that is 0x00FFFFFFFFFFFFFF.
             var payloadBits = width * 7;
             var maxSize = (1UL << payloadBits) - 1;
-            if (value >= maxSize) value = EBML_UNKNOWN_SIZE;
+
+            if (value >= maxSize)
+            {
+                value = EBML_UNKNOWN_SIZE;
+            }
         }
 
         length = width;
+
         return true;
     }
 
-    private static long endOf(long bodyStart, ulong size, long limit = long.MaxValue)
+    static long endOf(long bodyStart,
+                      ulong size,
+                      long limit = long.MaxValue)
     {
-        if (size == EBML_UNKNOWN_SIZE) return Math.Min(limit, long.MaxValue);
-        if (size > (ulong)(long.MaxValue - bodyStart)) return Math.Min(limit, long.MaxValue);
+        if (size == EBML_UNKNOWN_SIZE)
+        {
+            return Math.Min(limit, long.MaxValue);
+        }
+
+        if (size > (ulong)(long.MaxValue - bodyStart))
+        {
+            return Math.Min(limit, long.MaxValue);
+        }
+
         return Math.Min(limit, bodyStart + (long)size);
     }
 
-    private static bool tryReadUInt32(Stream stream, out uint value)
+    static bool tryReadUInt32(Stream stream,
+                              out uint value)
     {
         value = 0;
         Span<byte> buffer = stackalloc byte[4];
-        if (!readExactly(stream, buffer)) return false;
+
+        if (!readExactly(stream, buffer))
+        {
+            return false;
+        }
         value = (uint)((buffer[0] << 24) | (buffer[1] << 16) | (buffer[2] << 8) | buffer[3]);
+
         return true;
     }
 
-    private static bool tryReadUInt64(Stream stream, out ulong value)
+    static bool tryReadUInt64(Stream stream,
+                              out ulong value)
     {
         value = 0;
         Span<byte> buffer = stackalloc byte[8];
-        if (!readExactly(stream, buffer)) return false;
-        for (var i = 0; i < 8; i++) value = (value << 8) | buffer[i];
+
+        if (!readExactly(stream, buffer))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < 8; i++)
+        {
+            value = (value << 8) | buffer[i];
+        }
+
         return true;
     }
 
-    private static bool tryReadUIntBe(Stream stream, int byteCount, out ulong value)
+    static bool tryReadUIntBe(Stream stream,
+                              int byteCount,
+                              out ulong value)
     {
         value = 0;
-        if (byteCount is <= 0 or > 8) return false;
+
+        if (byteCount is <= 0 or > 8)
+        {
+            return false;
+        }
 
         Span<byte> buffer = stackalloc byte[8];
-        if (!readExactly(stream, buffer[..byteCount])) return false;
-        for (var i = 0; i < byteCount; i++) value = (value << 8) | buffer[i];
+
+        if (!readExactly(stream, buffer[..byteCount]))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < byteCount; i++)
+        {
+            value = (value << 8) | buffer[i];
+        }
+
         return true;
     }
 
-    private static bool tryReadSingle(Stream stream, out double value)
+    static bool tryReadSingle(Stream stream,
+                              out double value)
     {
         value = 0;
         Span<byte> buffer = stackalloc byte[4];
-        if (!readExactly(stream, buffer)) return false;
+
+        if (!readExactly(stream, buffer))
+        {
+            return false;
+        }
 
         // EBML floats are big-endian, which is .NET's default binary layout.
-        if (BitConverter.IsLittleEndian) buffer.Reverse();
+        if (BitConverter.IsLittleEndian)
+        {
+            buffer.Reverse();
+        }
         value = BitConverter.Int32BitsToSingle(MemoryMarshal.Read<int>(buffer));
+
         return true;
     }
 
-    private static bool tryReadDouble(Stream stream, out double value)
+    static bool tryReadDouble(Stream stream,
+                              out double value)
     {
         value = 0;
         Span<byte> buffer = stackalloc byte[8];
-        if (!readExactly(stream, buffer)) return false;
+
+        if (!readExactly(stream, buffer))
+        {
+            return false;
+        }
 
         // EBML floats are big-endian, which is .NET's default binary layout.
-        if (BitConverter.IsLittleEndian) buffer.Reverse();
+        if (BitConverter.IsLittleEndian)
+        {
+            buffer.Reverse();
+        }
         value = BitConverter.Int64BitsToDouble(MemoryMarshal.Read<long>(buffer));
+
         return true;
     }
 
     // Stream.Read may return fewer bytes than requested; seeking past a large
     // box makes short reads likely, so every fixed-width read must loop.
-    private static bool readExactly(Stream stream, Span<byte> buffer)
+    static bool readExactly(Stream stream,
+                            Span<byte> buffer)
     {
         var total = 0;
+
         while (total < buffer.Length)
         {
             var read = stream.Read(buffer[total..]);
-            if (read <= 0) return false;
+
+            if (read <= 0)
+            {
+                return false;
+            }
             total += read;
         }
 
         return true;
     }
 
-    private static uint fourCc(string value) =>
-        ((uint)value[0] << 24) | ((uint)value[1] << 16) | ((uint)value[2] << 8) | value[3];
-
-    private static int toMilliseconds(double value)
+    static uint fourCc(string value)
     {
-        if (double.IsNaN(value) || double.IsInfinity(value)) return 0;
-        if (value <= 0 || value >= int.MaxValue) return 0;
+        return ((uint)value[0] << 24) | ((uint)value[1] << 16) | ((uint)value[2] << 8) | value[3];
+    }
+
+    static int toMilliseconds(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            return 0;
+        }
+
+        if (value <= 0 || value >= int.MaxValue)
+        {
+            return 0;
+        }
+
         return (int)Math.Round(value);
     }
 
-    private readonly record struct Box(uint Type, long BodyStart, long BodyEnd);
+    readonly record struct Box(uint Type, long BodyStart, long BodyEnd);
 }

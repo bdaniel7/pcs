@@ -9,14 +9,16 @@ namespace PlexCompatibleServer.Api.Controllers;
 [ApiController]
 public sealed class HubController : ControllerBase
 {
-    private const int DEFAULT_HUB_SIZE = 6;
-    private const int MAX_HUB_SIZE = 50;
+    const int DEFAULT_HUB_SIZE = 6;
+    const int MAX_HUB_SIZE = 50;
 
-    private readonly IMediaRepository repo;
-    private readonly ServerOptions options;
-    private readonly IMetadataService metadata;
+    readonly IMediaRepository repo;
+    readonly ServerOptions options;
+    readonly IMetadataService metadata;
 
-    public HubController(IMediaRepository repo, ServerOptions options, IMetadataService metadata)
+    public HubController(IMediaRepository repo,
+                         ServerOptions options,
+                         IMetadataService metadata)
     {
         this.repo = repo;
         this.options = options;
@@ -34,38 +36,41 @@ public sealed class HubController : ControllerBase
         var progress = await repo.GetInProgressAsync(null, limit, ct);
 
         var hubs = new List<XmlHub>
-        {
-            progressHubOrEmpty("/hubs/home/continueWatching", "Continue Watching", "mixed",
-                "home.continue", "hub.home.continue", progress),
-            emptyHub("/hubs/home/onDeck", "On Deck", "episode", "home.ondeck", "hub.home.ondeck")
-        };
+                   {
+                           progressHubOrEmpty("/hubs/home/continueWatching", "Continue Watching", "mixed",
+                                              "home.continue", "hub.home.continue", progress),
+                           emptyHub("/hubs/home/onDeck", "On Deck", "episode", "home.ondeck", "hub.home.ondeck")
+                   };
 
         if (movieLibraries.Count > 0)
         {
             hubs.Add(await recentHub(movieLibraries, 1, "movie", "Recently Added Movies",
-                "home.movies.recent", "hub.home.movies.recent", limit, ct));
+                                     "home.movies.recent", "hub.home.movies.recent", limit, ct));
         }
 
         if (showLibraries.Count > 0)
         {
             hubs.Add(await recentHub(showLibraries, 2, "mixed", "Recently Added TV",
-                "home.television.recent", "hub.home.television.recent", limit, ct));
+                                     "home.television.recent", "hub.home.television.recent", limit, ct));
         }
 
         hubs.Add(emptyHub("/hubs/home/recentlyAdded?type=8", "Recently Added Music", "album",
-            "home.music.recent", "hub.home.music.recent"));
+                          "home.music.recent", "hub.home.music.recent"));
+
         hubs.Add(emptyHub("/hubs/home/recentlyAdded?type=13", "Recently Added Photos", "photo",
-            "home.photos.recent", "hub.home.photos.recent"));
+                          "home.photos.recent", "hub.home.photos.recent"));
+
         hubs.Add(emptyHub("/hubs/home/recentlyAdded?type=1&personal=1", "Recently Added Videos", "clip",
-            "home.videos.recent", "hub.home.videos.recent"));
+                          "home.videos.recent", "hub.home.videos.recent"));
+
         hubs.Add(emptyHub("/playlists/all?type=15&sort=lastViewedAt:desc&playlistType=video,audio",
-            "Recent Playlists", "playlist", "home.playlists", "hub.home.playlists"));
+                          "Recent Playlists", "playlist", "home.playlists", "hub.home.playlists"));
 
         return PlexResults.Container(this, new XmlHubContainer
-        {
-            Size = hubs.Count,
-            Hubs = hubs
-        });
+                                           {
+                                                   Size = hubs.Count,
+                                                   Hubs = hubs
+                                           });
     }
 
     [HttpGet("/hubs/continueWatching")]
@@ -73,13 +78,18 @@ public sealed class HubController : ControllerBase
     public async Task<IActionResult> ContinueWatching(CancellationToken ct)
     {
         var progress = await repo.GetInProgressAsync(null, resolveLimit(), ct);
-        var hubs = new List<XmlHub>
-        {
-            progressHubOrEmpty("/hubs/continueWatching/items", "Continue Watching", "mixed",
-                "continueWatching", "hub.continueWatching", progress)
-        };
 
-        return PlexResults.Container(this, new XmlHubContainer { Size = hubs.Count, Hubs = hubs });
+        var hubs = new List<XmlHub>
+                   {
+                           progressHubOrEmpty("/hubs/continueWatching/items", "Continue Watching", "mixed",
+                                              "continueWatching", "hub.continueWatching", progress)
+                   };
+
+        return PlexResults.Container(this, new XmlHubContainer
+                                           {
+                                                   Size = hubs.Count,
+                                                   Hubs = hubs
+                                           });
     }
 
     [HttpGet("/hubs/promoted")]
@@ -88,32 +98,45 @@ public sealed class HubController : ControllerBase
     {
         var libraryId = int.TryParse(Request.Query["contentDirectoryID"], out var parsed) ? parsed : 0;
         var library = await repo.GetLibraryAsync(libraryId, ct);
-        if (library is null) return NotFound();
+
+        if (library is null)
+        {
+            return NotFound();
+        }
 
         var kind = library.Type == LibraryType.Movie ? "movie" : "show";
         var items = await repo.GetItemsAsync(libraryId, ct);
+
         var hub = sectionHub(
-            $"/library/sections/{libraryId}/all?sort=addedAt:desc",
-            $"Recently Added in {library.Name}",
-            kind,
-            $"{kind}.recentlyadded.{libraryId}",
-            $"hub.{kind}.recentlyadded",
-            items,
-            resolveLimit());
+                             $"/library/sections/{libraryId}/all?sort=addedAt:desc",
+                             $"Recently Added in {library.Name}",
+                             kind,
+                             $"{kind}.recentlyadded.{libraryId}",
+                             $"hub.{kind}.recentlyadded",
+                             items,
+                             resolveLimit());
 
         return PlexResults.Container(this, new XmlHubContainer
-        {
-            Size = 1,
-            Hubs = { hub }
-        });
+                                           {
+                                                   Size = 1,
+                                                   Hubs =
+                                                   {
+                                                           hub
+                                                   }
+                                           });
     }
 
     [HttpGet("/hubs/sections/{libraryId:int}")]
     [Produces("application/xml", "application/json")]
-    public async Task<IActionResult> SectionHubs(int libraryId, CancellationToken ct)
+    public async Task<IActionResult> SectionHubs(int libraryId,
+                                                 CancellationToken ct)
     {
         var library = await repo.GetLibraryAsync(libraryId, ct);
-        if (library is null) return NotFound();
+
+        if (library is null)
+        {
+            return NotFound();
+        }
 
         var limit = resolveLimit();
         var isMovie = library.Type == LibraryType.Movie;
@@ -124,44 +147,44 @@ public sealed class HubController : ControllerBase
         var progress = await repo.GetInProgressAsync(libraryId, limit, ct);
 
         var recentlyAdded = sectionHub(
-            $"/library/sections/{libraryId}/all?sort=addedAt:desc",
-            $"Recently Added in {library.Name}",
-            kind,
-            $"{kind}.recentlyadded.{libraryId}",
-            $"hub.{kind}.recentlyadded",
-            items,
-            limit);
+                                       $"/library/sections/{libraryId}/all?sort=addedAt:desc",
+                                       $"Recently Added in {library.Name}",
+                                       kind,
+                                       $"{kind}.recentlyadded.{libraryId}",
+                                       $"hub.{kind}.recentlyadded",
+                                       items,
+                                       limit);
 
         var hubs = new List<XmlHub>
-        {
-            progressHubOrEmpty($"/hubs/sections/{libraryId}/continueWatching/items", "Continue Watching", kind,
-                $"{kind}.inprogress.{libraryId}", $"hub.{kind}.inprogress", progress),
-            sectionHub(
-                $"/library/sections/{libraryId}/all?sort=originallyAvailableAt:desc&originallyAvailableAt>=-1y",
-                $"Recently Released {(isMovie ? "Movies" : "TV")}",
-                kind,
-                $"{kind}.recentlyreleased.{libraryId}",
-                $"hub.{kind}.recentlyreleased",
-                items,
-                limit),
-            recentlyAdded,
-            emptyHub($"/library/sections/{libraryId}/all?unwatched=1&sort=addedAt:desc",
-                $"Unwatched {(isMovie ? "Movies" : "TV")}", kind,
-                $"{kind}.topunwatched.{libraryId}", $"hub.{kind}.topunwatched"),
-            emptyHub(
-                $"/library/sections/{libraryId}/all?sort=lastViewedAt:desc&unwatched=0&viewOffset=0",
-                $"Recently Watched {(isMovie ? "Movies" : "TV")}", kind,
-                $"{kind}.recentlyviewed.{libraryId}", $"hub.{kind}.recentlyviewed")
-        };
+                   {
+                           progressHubOrEmpty($"/hubs/sections/{libraryId}/continueWatching/items", "Continue Watching", kind,
+                                              $"{kind}.inprogress.{libraryId}", $"hub.{kind}.inprogress", progress),
+                           sectionHub(
+                                      $"/library/sections/{libraryId}/all?sort=originallyAvailableAt:desc&originallyAvailableAt>=-1y",
+                                      $"Recently Released {(isMovie ? "Movies" : "TV")}",
+                                      kind,
+                                      $"{kind}.recentlyreleased.{libraryId}",
+                                      $"hub.{kind}.recentlyreleased",
+                                      items,
+                                      limit),
+                           recentlyAdded,
+                           emptyHub($"/library/sections/{libraryId}/all?unwatched=1&sort=addedAt:desc",
+                                    $"Unwatched {(isMovie ? "Movies" : "TV")}", kind,
+                                    $"{kind}.topunwatched.{libraryId}", $"hub.{kind}.topunwatched"),
+                           emptyHub(
+                                    $"/library/sections/{libraryId}/all?sort=lastViewedAt:desc&unwatched=0&viewOffset=0",
+                                    $"Recently Watched {(isMovie ? "Movies" : "TV")}", kind,
+                                    $"{kind}.recentlyviewed.{libraryId}", $"hub.{kind}.recentlyviewed")
+                   };
 
         return PlexResults.Container(this, new XmlSectionHubContainer
-        {
-            Size = hubs.Count,
-            LibrarySectionId = libraryId.ToString(),
-            LibrarySectionTitle = library.Name,
-            LibrarySectionUuid = options.LibraryUuid(libraryId, library.Name, kind),
-            Hubs = hubs
-        });
+                                           {
+                                                   Size = hubs.Count,
+                                                   LibrarySectionId = libraryId.ToString(),
+                                                   LibrarySectionTitle = library.Name,
+                                                   LibrarySectionUuid = options.LibraryUuid(libraryId, library.Name, kind),
+                                                   Hubs = hubs
+                                           });
     }
 
     // A browser client follows each hub's "key" to load its rows. Every key advertised above
@@ -170,63 +193,82 @@ public sealed class HubController : ControllerBase
     [HttpGet("/hubs/home/continueWatching")]
     [Produces("application/xml", "application/json")]
     public Task<IActionResult> HomeContinueWatching(CancellationToken ct)
-        => progressContainer(null, ct);
+    {
+        return progressContainer(null, ct);
+    }
 
     // On Deck (next unwatched episode of a partly watched show) stays empty: episode order lives
     // only in the cached sidecar titles, and a wrong next-episode is worse than none.
     [HttpGet("/hubs/home/onDeck")]
     [Produces("application/xml", "application/json")]
     public IActionResult OnDeckItems()
-        => PlexResults.Container(this, new XmlMediaContainer { Size = 0, MixedParents = "1" });
+    {
+        return PlexResults.Container(this, new XmlMediaContainer
+                                           {
+                                                   Size = 0,
+                                                   MixedParents = "1"
+                                           });
+    }
 
     [HttpGet("/hubs/sections/{libraryId:int}/continueWatching/items")]
     [Produces("application/xml", "application/json")]
-    public Task<IActionResult> SectionContinueWatching(int libraryId, CancellationToken ct)
-        => progressContainer(libraryId, ct);
+    public Task<IActionResult> SectionContinueWatching(int libraryId,
+                                                       CancellationToken ct)
+    {
+        return progressContainer(libraryId, ct);
+    }
 
-    private async Task<IActionResult> progressContainer(int? libraryId, CancellationToken ct)
+    async Task<IActionResult> progressContainer(int? libraryId,
+                                                CancellationToken ct)
     {
         var items = await repo.GetInProgressAsync(libraryId, resolveLimit(), ct);
+
         return PlexResults.Container(this, new XmlMediaContainer
-        {
-            Size = items.Count,
-            MixedParents = "1",
-            TotalSize = items.Count.ToString(),
-            Videos = items.Select(x => VideoMapper.ToVideoEnriched(metadata, x)).ToList()
-        });
+                                           {
+                                                   Size = items.Count,
+                                                   MixedParents = "1",
+                                                   TotalSize = items.Count.ToString(),
+                                                   Videos = items.Select(x => VideoMapper.ToVideoEnriched(metadata, x)).ToList()
+                                           });
     }
 
     /// <summary>
-    /// The detail screen loads this hub for its "More Like This" row. The official response to
-    /// <c>/hubs/metadata/826/related?includeMeta=1&amp;wait=1</c> is a single hub carrying
-    /// <c>type="movie"</c>, <c>context="hub.movie.similar"</c>, <c>hubIdentifier="movie.similar"</c>,
-    /// <c>key="/library/metadata/826/similar"</c>, <c>size</c> equal to the row count, and
-    /// <c>hubKey</c> as a single <c>/library/metadata/</c> prefix followed by the comma-joined
-    /// rating keys of the rows (<c>/library/metadata/3,644,645</c>). Only movie items
-    /// trigger this call on the LG client, and it is the last request before the detail screen
-    /// either renders or reports that content could not be loaded.
+    ///     The detail screen loads this hub for its "More Like This" row. The official response to
+    ///     <c>/hubs/metadata/826/related?includeMeta=1&amp;wait=1</c> is a single hub carrying
+    ///     <c>type="movie"</c>, <c>context="hub.movie.similar"</c>, <c>hubIdentifier="movie.similar"</c>,
+    ///     <c>key="/library/metadata/826/similar"</c>, <c>size</c> equal to the row count, and
+    ///     <c>hubKey</c> as a single <c>/library/metadata/</c> prefix followed by the comma-joined
+    ///     rating keys of the rows (<c>/library/metadata/3,644,645</c>). Only movie items
+    ///     trigger this call on the LG client, and it is the last request before the detail screen
+    ///     either renders or reports that content could not be loaded.
     /// </summary>
     [HttpGet("/hubs/metadata/{id:int}/related")]
     [Produces("application/xml", "application/json")]
-    public async Task<IActionResult> Related(int id, CancellationToken ct)
+    public async Task<IActionResult> Related(int id,
+                                             CancellationToken ct)
     {
         var item = await repo.GetItemAsync(id, ct);
-        if (item is null) return NotFound();
+
+        if (item is null)
+        {
+            return NotFound();
+        }
 
         var library = item.Library;
         var isMovie = library.Type == LibraryType.Movie;
         var kind = isMovie ? "movie" : "episode";
 
         var candidates = await repo.GetItemsAsync(library.Id, ct);
+
         var related = candidates
-            .Where(x => x.Id != id)
-            .OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase)
-            .Take(resolveLimit())
-            .ToList();
+                     .Where(x => x.Id != id)
+                     .OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase)
+                     .Take(resolveLimit())
+                     .ToList();
 
         var relatedVideos = related
-            .Select(x => VideoMapper.ToVideo(x, includeLibrarySection: true))
-            .ToList();
+                           .Select(x => VideoMapper.ToVideo(x, true))
+                           .ToList();
 
         // Official rows in this hub carry the same scraped-metadata sections as the detail screen,
         // and the client dereferences their credit lists the same way it does the detail item's -
@@ -235,177 +277,189 @@ public sealed class HubController : ControllerBase
         for (var i = 0; i < related.Count; i++)
         {
             await MetadataParity.ApplyAsync(metadata, related[i], relatedVideos[i], related[i].Id,
-                includeExtras: false, ct: ct);
+                                            false, ct: ct);
             relatedVideos[i].ChapterSource = "media";
         }
 
         var hub = new XmlHub
-        {
-            Key = $"/library/metadata/{id}/similar",
-            HubKey = "/library/metadata/" + string.Join(",", related.Select(x => x.Id)),
-            Title = isMovie ? "More Like This" : "Related Episodes",
-            Type = kind,
-            HubIdentifier = $"{kind}.similar",
-            Context = $"hub.{kind}.similar",
-            Size = related.Count,
-            More = candidates.Count - 1 > related.Count ? "1" : "0",
-            Videos = relatedVideos
-        };
+                  {
+                          Key = $"/library/metadata/{id}/similar",
+                          HubKey = "/library/metadata/" + string.Join(",", related.Select(x => x.Id)),
+                          Title = isMovie ? "More Like This" : "Related Episodes",
+                          Type = kind,
+                          HubIdentifier = $"{kind}.similar",
+                          Context = $"hub.{kind}.similar",
+                          Size = related.Count,
+                          More = candidates.Count - 1 > related.Count ? "1" : "0",
+                          Videos = relatedVideos
+                  };
 
         return PlexResults.Container(this, new XmlSectionHubContainer
-        {
-            Size = 1,
-            LibrarySectionId = library.Id.ToString(),
-            LibrarySectionTitle = library.Name,
-            LibrarySectionUuid = options.LibraryUuid(library.Id, library.Name, isMovie ? "movie" : "show"),
-            Hubs = { hub }
-        });
+                                           {
+                                                   Size = 1,
+                                                   LibrarySectionId = library.Id.ToString(),
+                                                   LibrarySectionTitle = library.Name,
+                                                   LibrarySectionUuid = options.LibraryUuid(library.Id, library.Name, isMovie ? "movie" : "show"),
+                                                   Hubs =
+                                                   {
+                                                           hub
+                                                   }
+                                           });
     }
 
     [HttpGet("/hubs/home/recentlyAdded")]
     [HttpGet("/playlists/all")]
     [Produces("application/xml", "application/json")]
-    public async Task<IActionResult> HomeRecentlyAdded(int? type, CancellationToken ct)
+    public async Task<IActionResult> HomeRecentlyAdded(int? type,
+                                                       CancellationToken ct)
     {
         var libraries = await repo.GetLibrariesAsync(ct);
 
         // Plex "type" ids: 1 = movie, 2 = show, 8 = music, 13 = photo, 15 = playlist.
         // Only movie and show are backed by real data here; the rest resolve to empty shelves.
         var wanted = type switch
-        {
-            1 => LibraryType.Movie,
-            2 => LibraryType.Show,
-            _ => (LibraryType?)null
-        };
+                     {
+                             1 => LibraryType.Movie,
+                             2 => LibraryType.Show,
+                             _ => (LibraryType?)null
+                     };
 
         IReadOnlyList<MediaItem> items = [];
+
         if (wanted is not null)
         {
             items = await repo.GetItemsByLibrariesAsync(
-                libraries.Where(x => x.Type == wanted.Value).Select(x => x.Id).ToList(), ct);
+                                                        libraries.Where(x => x.Type == wanted.Value).Select(x => x.Id).ToList(), ct);
         }
 
         var recent = items.OrderByDescending(x => x.UpdatedAt).Take(resolveLimit()).ToList();
 
         return PlexResults.Container(this, new XmlMediaContainer
-        {
-            Size = recent.Count,
-            MixedParents = "1",
-            TotalSize = recent.Count.ToString(),
-            Videos = recent.Select(x => VideoMapper.ToVideoEnriched(metadata, x)).ToList()
-        });
+                                           {
+                                                   Size = recent.Count,
+                                                   MixedParents = "1",
+                                                   TotalSize = recent.Count.ToString(),
+                                                   Videos = recent.Select(x => VideoMapper.ToVideoEnriched(metadata, x)).ToList()
+                                           });
     }
 
-    private int resolveLimit()
+    int resolveLimit()
     {
         if (int.TryParse(Request.Query["count"], out var requested) && requested > 0)
         {
             return Math.Min(requested, MAX_HUB_SIZE);
         }
+
         return DEFAULT_HUB_SIZE;
     }
 
-    private async Task<XmlHub> recentHub(
-        List<MediaLibrary> libraries,
-        int plexTypeId,
-        string hubType,
-        string title,
-        string hubIdentifier,
-        string context,
-        int limit,
-        CancellationToken ct)
+    async Task<XmlHub> recentHub(List<MediaLibrary> libraries,
+                                 int plexTypeId,
+                                 string hubType,
+                                 string title,
+                                 string hubIdentifier,
+                                 string context,
+                                 int limit,
+                                 CancellationToken ct)
     {
         var items = await repo.GetItemsByLibrariesAsync(libraries.Select(x => x.Id).ToList(), ct);
 
         var recent = items
-            .OrderByDescending(x => x.UpdatedAt)
-            .Take(limit)
-            .ToList();
+                    .OrderByDescending(x => x.UpdatedAt)
+                    .Take(limit)
+                    .ToList();
 
         var videos = recent
-            .Select(x => VideoMapper.ToVideoEnriched(metadata, x, includeLibrarySection: true))
-            .ToList();
+                    .Select(x => VideoMapper.ToVideoEnriched(metadata, x, true))
+                    .ToList();
 
         return new XmlHub
-        {
-            HubKey = string.Join(",", recent.Select(x => $"/library/metadata/{x.Id}")),
-            Key = $"/hubs/home/recentlyAdded?type={plexTypeId}",
-            Title = title,
-            Type = hubType,
-            HubIdentifier = hubIdentifier,
-            Context = context,
-            Size = videos.Count,
-            More = items.Count > videos.Count ? "1" : "0",
-            Videos = videos
-        };
+               {
+                       HubKey = string.Join(",", recent.Select(x => $"/library/metadata/{x.Id}")),
+                       Key = $"/hubs/home/recentlyAdded?type={plexTypeId}",
+                       Title = title,
+                       Type = hubType,
+                       HubIdentifier = hubIdentifier,
+                       Context = context,
+                       Size = videos.Count,
+                       More = items.Count > videos.Count ? "1" : "0",
+                       Videos = videos
+               };
     }
 
-    private XmlHub sectionHub(
-        string key,
-        string title,
-        string hubType,
-        string hubIdentifier,
-        string context,
-        IReadOnlyList<MediaItem> items,
-        int limit)
+    XmlHub sectionHub(string key,
+                      string title,
+                      string hubType,
+                      string hubIdentifier,
+                      string context,
+                      IReadOnlyList<MediaItem> items,
+                      int limit)
     {
         var recent = items.OrderByDescending(x => x.UpdatedAt).Take(limit).ToList();
         var videos = recent.Select(x => VideoMapper.ToVideoEnriched(metadata, x)).ToList();
 
         return new XmlHub
-        {
-            HubKey = string.Join(",", recent.Select(x => $"/library/metadata/{x.Id}")),
-            Key = key,
-            Title = title,
-            Type = hubType,
-            HubIdentifier = hubIdentifier,
-            Context = context,
-            Size = videos.Count,
-            More = items.Count > videos.Count ? "1" : "0",
-            Videos = videos
-        };
+               {
+                       HubKey = string.Join(",", recent.Select(x => $"/library/metadata/{x.Id}")),
+                       Key = key,
+                       Title = title,
+                       Type = hubType,
+                       HubIdentifier = hubIdentifier,
+                       Context = context,
+                       Size = videos.Count,
+                       More = items.Count > videos.Count ? "1" : "0",
+                       Videos = videos
+               };
     }
 
-    private static XmlHub emptyHub(string key, string title, string type, string hubIdentifier, string context)
-        => new()
-        {
-            Key = key,
-            Title = title,
-            Type = type,
-            HubIdentifier = hubIdentifier,
-            Context = context,
-            Size = 0,
-            More = "0"
-        };
+    static XmlHub emptyHub(string key,
+                           string title,
+                           string type,
+                           string hubIdentifier,
+                           string context)
+    {
+        return new XmlHub
+               {
+                       Key = key,
+                       Title = title,
+                       Type = type,
+                       HubIdentifier = hubIdentifier,
+                       Context = context,
+                       Size = 0,
+                       More = "0"
+               };
+    }
 
     /// <summary>
-    /// The Continue Watching shelf: the same empty shape as before when nothing is in progress,
-    /// otherwise one row per half-watched item, newest interaction first. Rows carry viewOffset,
-    /// which is what the client uses both for the progress ring and to seek on resume.
+    ///     The Continue Watching shelf: the same empty shape as before when nothing is in progress,
+    ///     otherwise one row per half-watched item, newest interaction first. Rows carry viewOffset,
+    ///     which is what the client uses both for the progress ring and to seek on resume.
     /// </summary>
-    private XmlHub progressHubOrEmpty(
-        string key,
-        string title,
-        string type,
-        string hubIdentifier,
-        string context,
-        IReadOnlyList<MediaItem> items)
+    XmlHub progressHubOrEmpty(string key,
+                              string title,
+                              string type,
+                              string hubIdentifier,
+                              string context,
+                              IReadOnlyList<MediaItem> items)
     {
-        if (items.Count == 0) return emptyHub(key, title, type, hubIdentifier, context);
+        if (items.Count == 0)
+        {
+            return emptyHub(key, title, type, hubIdentifier, context);
+        }
 
         var videos = items.Select(x => VideoMapper.ToVideoEnriched(metadata, x)).ToList();
 
         return new XmlHub
-        {
-            HubKey = string.Join(",", items.Select(x => $"/library/metadata/{x.Id}")),
-            Key = key,
-            Title = title,
-            Type = type,
-            HubIdentifier = hubIdentifier,
-            Context = context,
-            Size = videos.Count,
-            More = "0",
-            Videos = videos
-        };
+               {
+                       HubKey = string.Join(",", items.Select(x => $"/library/metadata/{x.Id}")),
+                       Key = key,
+                       Title = title,
+                       Type = type,
+                       HubIdentifier = hubIdentifier,
+                       Context = context,
+                       Size = videos.Count,
+                       More = "0",
+                       Videos = videos
+               };
     }
 }

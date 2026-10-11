@@ -23,19 +23,17 @@ public sealed class NotificationsController : ControllerBase
             while (socket.State == WebSocketState.Open && !ct.IsCancellationRequested)
             {
                 var result = await socket.ReceiveAsync(buffer, ct);
+
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
                     await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+
                     break;
                 }
             }
         }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (WebSocketException)
-        {
-        }
+        catch (OperationCanceledException) { }
+        catch (WebSocketException) { }
 
         return new EmptyResult();
     }

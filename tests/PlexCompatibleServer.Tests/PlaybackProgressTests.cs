@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,17 +13,20 @@ namespace PlexCompatibleServer.Tests;
 
 public class PlaybackProgressTests
 {
-    private string dbPath = "";
-    private string root = "";
-    private TestFactory factory = null!;
-    private MediaRepository repo = null!;
-    private MediaLibrary library = null!;
-    private MediaItem movie = null!;
+    string dbPath = "";
+    string root = "";
+    TestFactory factory = null!;
+    MediaRepository repo = null!;
+    MediaLibrary library = null!;
+    MediaItem movie = null!;
 
-    private sealed class TestFactory(DbContextOptions<MediaDbContext> options)
-        : IDbContextFactory<MediaDbContext>
+    sealed class TestFactory(DbContextOptions<MediaDbContext> options)
+            : IDbContextFactory<MediaDbContext>
     {
-        public MediaDbContext CreateDbContext() => new(options);
+        public MediaDbContext CreateDbContext()
+        {
+            return new MediaDbContext(options);
+        }
     }
 
     [SetUp]
@@ -33,23 +37,30 @@ public class PlaybackProgressTests
         Directory.CreateDirectory(root);
 
         var options = new DbContextOptionsBuilder<MediaDbContext>()
-            .UseSqlite($"Data Source={dbPath}").Options;
+                     .UseSqlite($"Data Source={dbPath}").Options;
         factory = new TestFactory(options);
+
         await using (var db = factory.CreateDbContext())
         {
             await db.Database.EnsureCreatedAsync();
-            library = new MediaLibrary { Name = "Movies", RootPath = root, Type = LibraryType.Movie };
+
+            library = new MediaLibrary
+                      {
+                              Name = "Movies",
+                              RootPath = root,
+                              Type = LibraryType.Movie
+                      };
             db.Libraries.Add(library);
             await db.SaveChangesAsync();
 
             movie = new MediaItem
-            {
-                LibraryId = library.Id,
-                FilePath = Path.Combine(root, "Movie.Two.Thousand.mkv"),
-                Title = "Movie Two Thousand",
-                FileSize = 123,
-                DurationMs = 6416960
-            };
+                    {
+                            LibraryId = library.Id,
+                            FilePath = Path.Combine(root, "Movie.Two.Thousand.mkv"),
+                            Title = "Movie Two Thousand",
+                            FileSize = 123,
+                            DurationMs = 6416960
+                    };
             db.Items.Add(movie);
             await db.SaveChangesAsync();
         }
@@ -60,23 +71,36 @@ public class PlaybackProgressTests
     [TearDown]
     public void TearDown()
     {
-        try { Directory.Delete(root, true); } catch { }
-        foreach (var p in new[] { dbPath, dbPath + "-wal", dbPath + "-shm" })
-            try { File.Delete(p); } catch { }
+        try { Directory.Delete(root, true); }
+        catch { }
+
+        foreach (var p in new[]
+                          {
+                                  dbPath, dbPath + "-wal", dbPath + "-shm"
+                          })
+        {
+            try { File.Delete(p); }
+            catch { }
+        }
     }
 
-    private async Task<MediaItem> reloadAsync(int id)
+    async Task<MediaItem> reloadAsync(int id)
     {
         await using var db = factory.CreateDbContext();
+
         return await db.Items.AsNoTracking().SingleAsync(x => x.Id == id);
     }
 
-    private static TimelineController timelineFor(MediaRepository repo)
+    static TimelineController timelineFor(MediaRepository repo)
     {
         var controller = new TimelineController(repo)
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                         {
+                                 ControllerContext = new ControllerContext
+                                                     {
+                                                             HttpContext = new DefaultHttpContext()
+                                                     }
+                         };
+
         return controller;
     }
 
@@ -84,9 +108,10 @@ public class PlaybackProgressTests
     public async Task Timeline_report_persists_and_surfaces_on_responses()
     {
         var controller = timelineFor(repo);
+
         await controller.Timeline(
-            ratingKey: movie.Id, key: "", time: 36980, duration: 6416960,
-            state: "playing", playQueueItemId: 1);
+                                  movie.Id, "", 36980, 6416960,
+                                  "playing", 1);
 
         var item = await reloadAsync(movie.Id);
         Assert.That(item.ViewOffset, Is.EqualTo(36980), "the reported position must be stored");
@@ -100,7 +125,13 @@ public class PlaybackProgressTests
         Assert.That(video.LastViewedAt, Is.Not.Empty);
 
         // The client parses JSON: viewOffset has to arrive as a number, like duration does.
-        var json = PlexJson.Serialize(new XmlMediaContainer { Videos = { video } });
+        var json = PlexJson.Serialize(new XmlMediaContainer
+                                      {
+                                              Videos =
+                                              {
+                                                      video
+                                              }
+                                      });
         Assert.That(json, Does.Contain("\"viewOffset\":36980"));
         Assert.That(json, Does.Contain("\"lastViewedAt\":"));
     }
@@ -109,32 +140,39 @@ public class PlaybackProgressTests
     public async Task Timeline_at_zero_never_erases_a_resume_point()
     {
         var controller = timelineFor(repo);
+
         await controller.Timeline(
-            ratingKey: movie.Id, key: "", time: 36980, duration: 6416960,
-            state: "playing", playQueueItemId: 1);
+                                  movie.Id, "", 36980, 6416960,
+                                  "playing", 1);
+
         await controller.Timeline(
-            ratingKey: movie.Id, key: "", time: 0, duration: 6416960,
-            state: "buffering", playQueueItemId: 1);
+                                  movie.Id, "", 0, 6416960,
+                                  "buffering", 1);
 
         var item = await reloadAsync(movie.Id);
+
         Assert.That(item.ViewOffset, Is.EqualTo(36980),
-            "the buffering heartbeat at 0 that a resume seek produces must not clobber the offset");
+                    "the buffering heartbeat at 0 that a resume seek produces must not clobber the offset");
     }
 
     [Test]
     public async Task Crossing_ninety_percent_counts_exactly_one_view()
     {
         var controller = timelineFor(repo);
+
         await controller.Timeline(
-            ratingKey: movie.Id, key: "", time: 6000000, duration: 6416960, state: "playing");
+                                  movie.Id, "", 6000000, 6416960, "playing");
+
         await controller.Timeline(
-            ratingKey: movie.Id, key: "", time: 6100000, duration: 6416960, state: "playing");
+                                  movie.Id, "", 6100000, 6416960, "playing");
+
         await controller.Timeline(
-            ratingKey: movie.Id, key: "", time: 6416960, duration: 6416960, state: "stopped");
+                                  movie.Id, "", 6416960, 6416960, "stopped");
 
         var item = await reloadAsync(movie.Id);
+
         Assert.That(item.ViewCount, Is.EqualTo(1),
-            "heartbeats past the threshold are the same session, not new views");
+                    "heartbeats past the threshold are the same session, not new views");
         Assert.That(item.ViewOffset, Is.GreaterThanOrEqualTo(6000000));
     }
 
@@ -142,8 +180,9 @@ public class PlaybackProgressTests
     public async Task Scrobble_marks_watched_once_and_unscrobble_forgets()
     {
         var controller = timelineFor(repo);
-        await controller.Scrobble(key: $"/library/metadata/{movie.Id}",
-            identifier: "com.plexapp.plugins.library");
+
+        await controller.Scrobble($"/library/metadata/{movie.Id}",
+                                  "com.plexapp.plugins.library");
 
         var item = await reloadAsync(movie.Id);
         Assert.That(item.ViewCount, Is.EqualTo(1));
@@ -151,10 +190,10 @@ public class PlaybackProgressTests
 
         // A second scrobble seconds later belongs to the same viewing (the 90% timeline rule
         // may already have counted it too).
-        await controller.Scrobble(key: movie.Id.ToString(), identifier: "com.plexapp.plugins.library");
+        await controller.Scrobble(movie.Id.ToString(), "com.plexapp.plugins.library");
         Assert.That((await reloadAsync(movie.Id)).ViewCount, Is.EqualTo(1));
 
-        await controller.Unscrobble(key: movie.Id.ToString(), identifier: "com.plexapp.plugins.library");
+        await controller.Unscrobble(movie.Id.ToString(), "com.plexapp.plugins.library");
         item = await reloadAsync(movie.Id);
         Assert.That(item.ViewCount, Is.Zero);
         Assert.That(item.ViewOffset, Is.Null);
@@ -168,46 +207,54 @@ public class PlaybackProgressTests
 
         // In progress.
         await controller.Timeline(
-            ratingKey: movie.Id, key: "", time: 36980, duration: 6416960, state: "playing");
+                                  movie.Id, "", 36980, 6416960, "playing");
 
         // Started but nothing to resume yet (never progressed): stays out.
         await using (var db = factory.CreateDbContext())
         {
             db.Items.Add(new MediaItem
-            {
-                LibraryId = library.Id,
-                FilePath = Path.Combine(root, "Fresh.mkv"),
-                Title = "Fresh",
-                FileSize = 1,
-                DurationMs = 1000000
-            });
+                         {
+                                 LibraryId = library.Id,
+                                 FilePath = Path.Combine(root, "Fresh.mkv"),
+                                 Title = "Fresh",
+                                 FileSize = 1,
+                                 DurationMs = 1000000
+                         });
+
             // Finished: past the 90% threshold, stays out.
             db.Items.Add(new MediaItem
-            {
-                LibraryId = library.Id,
-                FilePath = Path.Combine(root, "Done.mkv"),
-                Title = "Done",
-                FileSize = 1,
-                DurationMs = 1000000,
-                ViewOffset = 1000000,
-                LastViewedAt = DateTimeOffset.UtcNow,
-                ViewCount = 1
-            });
+                         {
+                                 LibraryId = library.Id,
+                                 FilePath = Path.Combine(root, "Done.mkv"),
+                                 Title = "Done",
+                                 FileSize = 1,
+                                 DurationMs = 1000000,
+                                 ViewOffset = 1000000,
+                                 LastViewedAt = DateTimeOffset.UtcNow,
+                                 ViewCount = 1
+                         });
             await db.SaveChangesAsync();
         }
 
         var inProgress = await repo.GetInProgressAsync(null, 10, CancellationToken.None);
-        Assert.That(inProgress.Select(x => x.Title), Is.EqualTo(new[] { "Movie Two Thousand" }),
-            "only the half-watched item qualifies for the shelf");
+
+        Assert.That(inProgress.Select(x => x.Title), Is.EqualTo(new[]
+                                                                {
+                                                                        "Movie Two Thousand"
+                                                                }),
+                    "only the half-watched item qualifies for the shelf");
 
         var hub = new HubController(repo, new ServerOptions(), new ExternalMetadata())
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                  {
+                          ControllerContext = new ControllerContext
+                                              {
+                                                      HttpContext = new DefaultHttpContext()
+                                              }
+                  };
         var result = await hub.HomeContinueWatching(CancellationToken.None);
 
         var xml = (ContentResult)result;
-        var doc = System.Xml.Linq.XDocument.Parse(xml.Content!);
+        var doc = XDocument.Parse(xml.Content!);
         var container = doc.Root!;
         Assert.That((string?)container.Attribute("size"), Is.EqualTo("1"));
         var video = container.Elements("Video").Single();
@@ -219,24 +266,28 @@ public class PlaybackProgressTests
     public async Task Remove_from_continue_watching_hides_the_shelf_but_keeps_progress()
     {
         var controller = timelineFor(repo);
+
         await controller.Timeline(
-            ratingKey: movie.Id, key: "", time: 36980, duration: 6416960,
-            state: "playing", playQueueItemId: 1);
+                                  movie.Id, "", 36980, 6416960,
+                                  "playing", 1);
 
         var hub = new HubController(repo, new ServerOptions(), new ExternalMetadata())
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                  {
+                          ControllerContext = new ControllerContext
+                                              {
+                                                      HttpContext = new DefaultHttpContext()
+                                              }
+                  };
 
-        static string? HubSize(System.Xml.Linq.XDocument doc)
+        static string? HubSize(XDocument doc)
             => (string?)doc.Root!.Attribute("size");
 
-        var before = HubSize(System.Xml.Linq.XDocument.Parse(
-            ((ContentResult)await hub.HomeContinueWatching(CancellationToken.None)).Content!));
+        var before = HubSize(XDocument.Parse(
+                                             ((ContentResult)await hub.HomeContinueWatching(CancellationToken.None)).Content!));
         Assert.That(before, Is.EqualTo("1"), "the half-watched item starts on the shelf");
 
         await controller.RemoveFromContinueWatching(
-            ratingKey: movie.Id.ToString(), identifier: "com.plexapp.plugins.library");
+                                                    movie.Id.ToString(), "com.plexapp.plugins.library");
 
         var dismissed = await reloadAsync(movie.Id);
         Assert.That(dismissed.ContinueWatchingDismissedAt, Is.Not.Null, "the dismissal must persist");
@@ -244,32 +295,34 @@ public class PlaybackProgressTests
         Assert.That(dismissed.ViewCount, Is.Zero, "removal must not mark the item watched");
 
         Assert.That(await repo.GetInProgressAsync(null, 10, CancellationToken.None), Is.Empty,
-            "the dismissed card must leave every Continue Watching shelf");
-        var after = HubSize(System.Xml.Linq.XDocument.Parse(
-            ((ContentResult)await hub.HomeContinueWatching(CancellationToken.None)).Content!));
+                    "the dismissed card must leave every Continue Watching shelf");
+
+        var after = HubSize(XDocument.Parse(
+                                            ((ContentResult)await hub.HomeContinueWatching(CancellationToken.None)).Content!));
         Assert.That(after, Is.EqualTo("0"));
 
         // A buffering heartbeat at 0 is not the viewer playing the item and must not resurrect it.
         await controller.Timeline(
-            ratingKey: movie.Id, key: "", time: 0, duration: 6416960, state: "buffering");
+                                  movie.Id, "", 0, 6416960, "buffering");
         Assert.That((await reloadAsync(movie.Id)).ContinueWatchingDismissedAt, Is.Not.Null);
 
         // The next real position report reverses the removal, like on a real Plex server.
         await controller.Timeline(
-            ratingKey: movie.Id, key: "", time: 40000, duration: 6416960,
-            state: "playing", playQueueItemId: 1);
+                                  movie.Id, "", 40000, 6416960,
+                                  "playing", 1);
         Assert.That((await reloadAsync(movie.Id)).ContinueWatchingDismissedAt, Is.Null);
+
         Assert.That(await repo.GetInProgressAsync(null, 10, CancellationToken.None), Has.Count.EqualTo(1),
-            "playing the item again must bring the card back");
+                    "playing the item again must bring the card back");
     }
 
     [Test]
     public async Task Timeline_for_an_unknown_or_missing_key_is_harmless()
     {
         var controller = timelineFor(repo);
-        await controller.Timeline(ratingKey: 999999, key: "", time: 5000, duration: 10000, state: "playing");
-        await controller.Timeline(ratingKey: 0, key: "", time: 5000, duration: 10000, state: "playing");
-        await controller.Scrobble(key: "not-a-key", identifier: "");
+        await controller.Timeline(999999, "", 5000, 10000, "playing");
+        await controller.Timeline(0, "", 5000, 10000, "playing");
+        await controller.Scrobble("not-a-key", "");
 
         Assert.That((await reloadAsync(movie.Id)).ViewOffset, Is.Null);
     }

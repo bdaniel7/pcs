@@ -3,10 +3,10 @@
     <RootNamespace>PlexCompatibleServer.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\PlexCompatibleServer.Core\PlexCompatibleServer.Core.csproj" />
-    <ProjectReference Include="..\PlexCompatibleServer.Infrastructure\PlexCompatibleServer.Infrastructure.csproj" />
+    <ProjectReference Include="..\PlexCompatibleServer.Core\PlexCompatibleServer.Core.csproj"/>
+    <ProjectReference Include="..\PlexCompatibleServer.Infrastructure\PlexCompatibleServer.Infrastructure.csproj"/>
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="PlexCompatibleServer.Tests" />
+    <InternalsVisibleTo Include="PlexCompatibleServer.Tests"/>
   </ItemGroup>
 </Project>

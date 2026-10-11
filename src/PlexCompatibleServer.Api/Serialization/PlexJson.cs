@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using System.Xml.Serialization;
@@ -16,170 +17,236 @@ public static class PlexJson
         sb.Append(':');
         writeObject(sb, value!);
         sb.Append('}');
+
         return sb.ToString();
     }
 
-    private static readonly ConcurrentDictionary<Type, string> rootNames = new();
-    private static readonly ConcurrentDictionary<Type, MemberPlan[]> plans = new();
+    static readonly ConcurrentDictionary<Type, string> rootNames = new();
+    static readonly ConcurrentDictionary<Type, MemberPlan[]> plans = new();
 
-    private static string rootName(Type type)
-        => rootNames.GetOrAdd(type, static t =>
-        {
-            var attr = t.GetCustomAttribute<XmlRootAttribute>();
-            return attr != null ? attr.ElementName : t.Name;
-        });
+    static string rootName(Type type)
+    {
+        return rootNames.GetOrAdd(type, static t =>
+                                        {
+                                            var attr = t.GetCustomAttribute<XmlRootAttribute>();
+
+                                            return attr != null ? attr.ElementName : t.Name;
+                                        });
+    }
 
     /// <summary>
-    /// The reflection work needed to serialize a type, resolved once: the writeable members in
-    /// declaration order with their XML/JSON names, plus every name-based set membership the
-    /// writer would otherwise re-evaluate for each instance.
+    ///     The reflection work needed to serialize a type, resolved once: the writeable members in
+    ///     declaration order with their XML/JSON names, plus every name-based set membership the
+    ///     writer would otherwise re-evaluate for each instance.
     /// </summary>
-    private sealed class MemberPlan
+    sealed class MemberPlan
     {
         public required PropertyInfo Property { get; init; }
+
         public required string Name { get; init; }
+
         public bool IsAttribute { get; init; }
+
         public bool StringValued { get; init; }
+
         public bool BooleanValued { get; init; }
+
         public bool NumericValued { get; init; }
+
         public bool ZeroFilledMetadata { get; init; }
+
         public bool EmptyMetadata { get; init; }
+
         public bool StreamZeroMeansAbsent { get; init; }
+
         public bool ContainerZeroMeansAbsentQueue { get; init; }
+
         public bool OptimizedPart { get; init; }
+
         public bool EmptyMetadataSection { get; init; }
     }
 
-    private static MemberPlan[] planFor(Type type) => plans.GetOrAdd(type, buildPlan);
-
-    private static MemberPlan[] buildPlan(Type type)
+    static MemberPlan[] planFor(Type type)
     {
-        var plans = new List<MemberPlan>();
+        return plans.GetOrAdd(type, buildPlan);
+    }
+
+    static MemberPlan[] buildPlan(Type type)
+    {
+        var _plans = new List<MemberPlan>();
 
         foreach (var property in type.GetProperties())
         {
-            if (property.GetIndexParameters().Length > 0) continue;
+            if (property.GetIndexParameters().Length > 0)
+            {
+                continue;
+            }
 
             var attribute = property.GetCustomAttribute<XmlAttributeAttribute>();
+
             if (attribute?.AttributeName is { } attrName)
             {
-                plans.Add(new MemberPlan
-                {
-                    Property = property,
-                    Name = attrName,
-                    IsAttribute = true,
-                    StringValued = stringValuedAttributes.Contains(attrName),
-                    BooleanValued = booleanAttributes.Contains(attrName),
-                    NumericValued = numericValuedAttributes.Contains(attrName),
-                    ZeroFilledMetadata = zeroFilledMetadataAttributes.Contains(attrName),
-                    EmptyMetadata = emptyMetadataAttributes.Contains(attrName),
-                    StreamZeroMeansAbsent = type == typeof(XmlStream) && zeroMeansAbsent.Contains(attrName),
-                    ContainerZeroMeansAbsentQueue =
-                        type == typeof(XmlMediaContainer) && zeroMeansAbsentContainer.Contains(attrName),
-                    OptimizedPart = attrName == "optimizedForStreaming" && type == typeof(XmlPart)
-                });
+                _plans.Add(new MemberPlan
+                           {
+                                   Property = property,
+                                   Name = attrName,
+                                   IsAttribute = true,
+                                   StringValued = stringValuedAttributes.Contains(attrName),
+                                   BooleanValued = booleanAttributes.Contains(attrName),
+                                   NumericValued = numericValuedAttributes.Contains(attrName),
+                                   ZeroFilledMetadata = zeroFilledMetadataAttributes.Contains(attrName),
+                                   EmptyMetadata = emptyMetadataAttributes.Contains(attrName),
+                                   StreamZeroMeansAbsent = type == typeof(XmlStream) && zeroMeansAbsent.Contains(attrName),
+                                   ContainerZeroMeansAbsentQueue =
+                                           type == typeof(XmlMediaContainer) && zeroMeansAbsentContainer.Contains(attrName),
+                                   OptimizedPart = attrName == "optimizedForStreaming" && type == typeof(XmlPart)
+                           });
+
                 continue;
             }
 
             var element = property.GetCustomAttribute<XmlElementAttribute>();
+
             if (element?.ElementName is { } elemName)
             {
-                plans.Add(new MemberPlan
-                {
-                    Property = property,
-                    Name = jsonElementName(elemName),
-                    IsAttribute = false,
-                    EmptyMetadataSection = emptyMetadataSections.Contains(elemName)
-                });
+                _plans.Add(new MemberPlan
+                           {
+                                   Property = property,
+                                   Name = jsonElementName(elemName),
+                                   IsAttribute = false,
+                                   EmptyMetadataSection = emptyMetadataSections.Contains(elemName)
+                           });
             }
         }
 
-        return [.. plans];
+        return [.. _plans];
     }
 
 
     // Plex's XML and JSON dialects disagree on a few element names. The client parses
     // JSON, so a hub whose rows arrive as "Video" instead of "Metadata" renders no rows.
-    private static readonly Dictionary<string, string> jsonElementNames = new()
-    {
-        ["Video"] = "Metadata"
-    };
+    static readonly Dictionary<string, string> jsonElementNames = new()
+                                                                  {
+                                                                          ["Video"] = "Metadata"
+                                                                  };
 
     // These are 0/1 in the XML dialect but real booleans in JSON.
     // optimizedForStreaming is deliberately absent: official Plex sends it as an integer there,
     // and it is the only int/bool type mismatch left in a rich metadata response.
-    private static readonly HashSet<string> booleanAttributes = new()
-    {
-        "allowSync", "allowCameraUpload", "claimed", "more", "hidden", "refreshing",
-        "has64bitOffsets", "watched", "unwatched", "primaryExtra", "hasPremiumPrimaryExtra",
-        "selected", "default", "exists", "accessible",
-        "hasScalingMatrix"
-    };
+    static readonly HashSet<string> booleanAttributes = new()
+                                                        {
+                                                                "allowSync",
+                                                                "allowCameraUpload",
+                                                                "claimed",
+                                                                "more",
+                                                                "hidden",
+                                                                "refreshing",
+                                                                "has64bitOffsets",
+                                                                "watched",
+                                                                "unwatched",
+                                                                "primaryExtra",
+                                                                "hasPremiumPrimaryExtra",
+                                                                "selected",
+                                                                "default",
+                                                                "exists",
+                                                                "accessible",
+                                                                "hasScalingMatrix"
+                                                        };
 
     // Metadata sections a movie detail screen asks for via includeExternalMetadata=1. The client
     // reads them unconditionally on that path (it explicitly excludes Actor/Country/Producer for
     // episodes, but not for movies), so omitting them when we have nothing to put in them leaves
     // the detail screen reporting that content could not be loaded. Sending them empty is honest:
     // it says "this server has no scraped metadata for this item".
-    private static readonly HashSet<string> emptyMetadataSections = new(StringComparer.Ordinal)
-    {
-        "Genre", "Director", "Writer", "Role", "Rating", "Country", "Producer", "Review"
-    };
+    static readonly HashSet<string> emptyMetadataSections = new(StringComparer.Ordinal)
+                                                            {
+                                                                    "Genre",
+                                                                    "Director",
+                                                                    "Writer",
+                                                                    "Role",
+                                                                    "Rating",
+                                                                    "Country",
+                                                                    "Producer",
+                                                                    "Review"
+                                                            };
 
     // Same reasoning for the string-valued scraped fields: an absent key is not the same as an
     // empty one to a client that reads them unconditionally on the movie detail path.
     // audienceRating and contentRatingAge are deliberately NOT here: official Plex types them as
     // float and int, so emitting "" for them would trade a missing key for a type mismatch.
-    private static readonly HashSet<string> emptyMetadataAttributes = new(StringComparer.Ordinal)
-    {
-        "summary", "tagline", "contentRating", "audienceRatingImage"
-    };
+    static readonly HashSet<string> emptyMetadataAttributes = new(StringComparer.Ordinal)
+                                                              {
+                                                                      "summary",
+                                                                      "tagline",
+                                                                      "contentRating",
+                                                                      "audienceRatingImage"
+                                                              };
 
     // Same reasoning as EmptyMetadataAttributes, but official Plex types these as numbers, so the
     // value has to be a JSON number. Emitting 0 keeps the field present and correctly typed.
-    private static readonly HashSet<string> zeroFilledMetadataAttributes = new(StringComparer.Ordinal)
-    {
-        "audienceRating", "contentRatingAge"
-    };
+    static readonly HashSet<string> zeroFilledMetadataAttributes = new(StringComparer.Ordinal)
+                                                                   {
+                                                                           "audienceRating",
+                                                                           "contentRatingAge"
+                                                                   };
 
     // Real Plex quotes these even though they look numeric, so they must not be swept up by the
     // all-digits heuristic below: "streamIdentifier":"1" and "videoResolution":"720".
     // ratingKey belongs here too: real Plex sends "ratingKey":"826" as a string, and the client
     // calls string methods on it, so a bare number raises a TypeError once the detail screen is
     // already on screen.
-    private static readonly HashSet<string> stringValuedAttributes = new(StringComparer.Ordinal)
-    {
-        "streamIdentifier", "videoResolution", "videoFrameRate", "ratingKey"
-    };
+    static readonly HashSet<string> stringValuedAttributes = new(StringComparer.Ordinal)
+                                                             {
+                                                                     "streamIdentifier",
+                                                                     "videoResolution",
+                                                                     "videoFrameRate",
+                                                                     "ratingKey"
+                                                             };
 
     // ...and the mirror image: real Plex emits these unquoted even though the model holds them as
     // strings, so "2.35" must reach the client as 2.35.
-    private static readonly HashSet<string> numericValuedAttributes = new(StringComparer.Ordinal)
-    {
-        "aspectRatio", "frameRate", "audienceRating", "contentRatingAge"
-    };
+    static readonly HashSet<string> numericValuedAttributes = new(StringComparer.Ordinal)
+                                                              {
+                                                                      "aspectRatio",
+                                                                      "frameRate",
+                                                                      "audienceRating",
+                                                                      "contentRatingAge"
+                                                              };
 
     // Stream attributes that only apply to one track kind. Real Plex leaves them out entirely when
     // they do not apply - an audio track carries no width/height, a subtitle track no bitDepth - and
     // the models cannot use Nullable<T> because XmlSerializer rejects it on an XmlAttribute. The
     // XML dialect still writes 0; the JSON the client actually parses omits the key.
-    private static readonly HashSet<string> zeroMeansAbsent = new(StringComparer.Ordinal)
-      {
-          "width", "height", "codedWidth", "codedHeight", "bitDepth", "level", "refFrames",
-          "channels", "samplingRate", "bitrate"
-      };
+    static readonly HashSet<string> zeroMeansAbsent = new(StringComparer.Ordinal)
+                                                      {
+                                                              "width",
+                                                              "height",
+                                                              "codedWidth",
+                                                              "codedHeight",
+                                                              "bitDepth",
+                                                              "level",
+                                                              "refFrames",
+                                                              "channels",
+                                                              "samplingRate",
+                                                              "bitrate"
+                                                      };
 
     // Same idea for the container: a zero here means "there is no play queue", not "an empty
     // one", and official Plex leaves the attributes out in that case.
-    private static readonly HashSet<string> zeroMeansAbsentContainer = new(StringComparer.Ordinal)
-      {
-          "playQueueSelectedItemOffset", "playQueueTotalCount", "playQueueVersion"
-      };
+    static readonly HashSet<string> zeroMeansAbsentContainer = new(StringComparer.Ordinal)
+                                                               {
+                                                                       "playQueueSelectedItemOffset",
+                                                                       "playQueueTotalCount",
+                                                                       "playQueueVersion"
+                                                               };
 
-    private static string jsonElementName(string xmlName)
-        => jsonElementNames.TryGetValue(xmlName, out var jsonName) ? jsonName : xmlName;
+    static string jsonElementName(string xmlName)
+    {
+        return jsonElementNames.TryGetValue(xmlName, out var jsonName) ? jsonName : xmlName;
+    }
 
-    private static void writeObject(StringBuilder sb, object model)
+    static void writeObject(StringBuilder sb,
+                            object model)
     {
         sb.Append('{');
         var first = true;
@@ -190,11 +257,18 @@ public static class PlexJson
 
             if (plan.IsAttribute)
             {
-                if (raw is null) continue;
+                if (raw is null)
+                {
+                    continue;
+                }
+
                 // Models are non-nullable and default to "", so blank is the "absent" signal.
                 if (raw is string text && text.Length == 0)
                 {
-                    if (!wantsEmptyMetadataSections(model)) continue;
+                    if (!wantsEmptyMetadataSections(model))
+                    {
+                        continue;
+                    }
 
                     // audienceRating and contentRatingAge are typed as numbers by official Plex, so
                     // an empty string would trade a missing key for a type mismatch. State a typed
@@ -206,39 +280,61 @@ public static class PlexJson
                         writeQuoted(sb, plan.Name);
                         sb.Append(':');
                         sb.Append('0');
+
                         continue;
                     }
 
-                    if (!plan.EmptyMetadata) continue;
+                    if (!plan.EmptyMetadata)
+                    {
+                        continue;
+                    }
                 }
-                if (plan.StreamZeroMeansAbsent && isZero(raw)) continue;
+
+                if (plan.StreamZeroMeansAbsent && isZero(raw))
+                {
+                    continue;
+                }
+
                 // A container that is not a play queue must not claim to be one: official Plex
                 // omits these counters entirely unless a play queue set them. XML cannot express
                 // "absent" for a non-nullable value, so the zero is dropped here instead. Gated on
                 // PlayQueueID because inside a real play queue a zero offset is meaningful.
                 if (plan.ContainerZeroMeansAbsentQueue && isZero(raw)
-                    && string.IsNullOrEmpty(((XmlMediaContainer)model).PlayQueueId)) continue;
+                 && string.IsNullOrEmpty(((XmlMediaContainer)model).PlayQueueId))
+                {
+                    continue;
+                }
                 writeSeparator(sb, ref first);
                 writeQuoted(sb, plan.Name);
                 sb.Append(':');
                 writeAttributeScalar(sb, plan, raw);
+
                 continue;
             }
 
-            if (raw is null) continue;
+            if (raw is null)
+            {
+                continue;
+            }
+
             if (raw is not IEnumerable items)
             {
                 writeSeparator(sb, ref first);
                 writeQuoted(sb, plan.Name);
                 sb.Append(':');
                 writeObject(sb, raw);
+
                 continue;
             }
 
             var elements = items.Cast<object>().Where(x => x is not null).ToList();
+
             if (elements.Count == 0)
             {
-                if (!wantsEmptyMetadataSections(model)) continue;
+                if (!wantsEmptyMetadataSections(model))
+                {
+                    continue;
+                }
 
                 if (plan.EmptyMetadataSection)
                 {
@@ -247,15 +343,20 @@ public static class PlexJson
                     sb.Append(":[");
                     sb.Append(']');
                 }
+
                 continue;
             }
 
             writeSeparator(sb, ref first);
             writeQuoted(sb, plan.Name);
             sb.Append(":[");
+
             for (var i = 0; i < elements.Count; i++)
             {
-                if (i > 0) sb.Append(',');
+                if (i > 0)
+                {
+                    sb.Append(',');
+                }
                 writeObject(sb, elements[i]);
             }
             sb.Append(']');
@@ -265,22 +366,28 @@ public static class PlexJson
     }
 
     // True only for the metadata responses built for an includeExternalMetadata=1 request.
-    private static bool wantsEmptyMetadataSections(object model)
-        => model is XmlVideo video && video.EmitEmptyMetadataSections;
+    static bool wantsEmptyMetadataSections(object model)
+    {
+        return model is XmlVideo video && video.EmitEmptyMetadataSections;
+    }
 
     // A boxed int does not match a "long l" type pattern, so this cannot be a switch on the boxed
     // value: every numeric arm has to be reached through IConvertible instead.
-    private static bool isZero(object value)
-        => value is IConvertible convertible
-           && convertible.ToDouble(System.Globalization.CultureInfo.InvariantCulture) == 0d;
+    static bool isZero(object value)
+    {
+        return value is IConvertible convertible
+            && convertible.ToDouble(CultureInfo.InvariantCulture) == 0d;
+    }
 
     // The client deserializes metadata into typed fields and throws on a type mismatch, which
     // surfaces as "content could not be loaded" on the info page even though every request
     // succeeded. The JSON type of each attribute is therefore pinned to what real Plex sends
     // rather than inferred from how the model happens to store it.
-    private static void writeAttributeScalar(StringBuilder sb, MemberPlan plan, object value)
+    static void writeAttributeScalar(StringBuilder sb,
+                                     MemberPlan plan,
+                                     object value)
     {
-        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        var invariant = CultureInfo.InvariantCulture;
 
         // optimizedForStreaming is the one attribute official Plex types differently depending on
         // where it appears: an integer on Media, a boolean on Part. Serializing both as an integer
@@ -288,23 +395,30 @@ public static class PlexJson
         if (plan.OptimizedPart)
         {
             writeBoolean(sb, value);
+
             return;
         }
 
         if (plan.StringValued)
         {
             writeQuoted(sb, Convert.ToString(value, invariant) ?? "");
+
             return;
         }
 
-        if (plan.BooleanValued && writeBoolean(sb, value)) return;
+        if (plan.BooleanValued && writeBoolean(sb, value))
+        {
+            return;
+        }
 
         if (plan.NumericValued)
         {
             var text = Convert.ToString(value, invariant) ?? "";
-            if (double.TryParse(text, System.Globalization.NumberStyles.Float, invariant, out var number))
+
+            if (double.TryParse(text, NumberStyles.Float, invariant, out var number))
             {
                 sb.Append(number.ToString("R", invariant));
+
                 return;
             }
         }
@@ -313,71 +427,101 @@ public static class PlexJson
     }
 
     /// <summary>Writes a 0/1 string or a bool as a JSON boolean. Returns false if unrecognised.</summary>
-    private static bool writeBoolean(StringBuilder sb, object value)
+    static bool writeBoolean(StringBuilder sb,
+                             object value)
     {
-        if (value is bool actual) { sb.Append(actual ? "true" : "false"); return true; }
+        if (value is bool actual)
+        {
+            sb.Append(actual ? "true" : "false");
+
+            return true;
+        }
+
         if (value is string flag && (flag == "0" || flag == "1"))
         {
             sb.Append(flag == "1" ? "true" : "false");
+
             return true;
         }
+
         return false;
     }
 
-    private static void writeScalar(StringBuilder sb, object value)
+    static void writeScalar(StringBuilder sb,
+                            object value)
     {
         switch (value)
         {
             case bool b:
                 sb.Append(b ? "true" : "false");
+
                 return;
             case string s:
                 writeScalarText(sb, s);
+
                 return;
             case int or long or short or byte or uint or ulong or ushort or sbyte:
-                sb.Append(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture));
+                sb.Append(Convert.ToString(value, CultureInfo.InvariantCulture));
+
                 return;
             case double or float or decimal:
-                sb.Append(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture));
+                sb.Append(Convert.ToString(value, CultureInfo.InvariantCulture));
+
                 return;
             default:
-                writeScalarText(sb, Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "");
+                writeScalarText(sb, Convert.ToString(value, CultureInfo.InvariantCulture) ?? "");
+
                 return;
         }
     }
 
     // Plex emits numeric-looking attributes as JSON numbers, not strings.
-    private static void writeScalarText(StringBuilder sb, string s)
+    static void writeScalarText(StringBuilder sb,
+                                string s)
     {
         if (s.Length > 0 && s.All(char.IsAsciiDigit) && long.TryParse(s, out var n))
         {
             sb.Append(n);
+
             return;
         }
         writeQuoted(sb, s);
     }
 
-    private static void writeSeparator(StringBuilder sb, ref bool first)
+    static void writeSeparator(StringBuilder sb,
+                               ref bool first)
     {
-        if (!first) sb.Append(',');
+        if (!first)
+        {
+            sb.Append(',');
+        }
         first = false;
     }
 
-    private static void writeQuoted(StringBuilder sb, string value)
+    static void writeQuoted(StringBuilder sb,
+                            string value)
     {
         sb.Append('"');
+
         foreach (var c in value)
         {
             switch (c)
             {
-                case '"': sb.Append("\\\""); break;
+                case '"':  sb.Append("\\\""); break;
                 case '\\': sb.Append("\\\\"); break;
                 case '\n': sb.Append("\\n"); break;
                 case '\r': sb.Append("\\r"); break;
                 case '\t': sb.Append("\\t"); break;
                 default:
-                    if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4"));
-                    else sb.Append(c);
+                    if (c < 0x20)
+                    {
+                        sb.Append("\\u").Append(((int)c).ToString("x4"));
+                    }
+                    else
+                    {
+                        sb.Append(c);
+                    }
+
                     break;
             }
         }

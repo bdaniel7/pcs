@@ -3,9 +3,9 @@ using System.Text.Json.Serialization;
 namespace PlexCompatibleServer.Core.Models;
 
 /// <summary>
-/// One plex.tv metadata record, keyed by the media file's normalized stem in the sidecar and the
-/// lookup cache. Field names line up with the scraped sidecar JSON, so the serialized shape is
-/// unchanged by the move out of the Api layer.
+///     One plex.tv metadata record, keyed by the media file's normalized stem in the sidecar and the
+///     lookup cache. Field names line up with the scraped sidecar JSON, so the serialized shape is
+///     unchanged by the move out of the Api layer.
 /// </summary>
 public sealed class SidecarItem
 {

@@ -8,16 +8,19 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class SidecarBackfillTests
 {
-    private ExternalMetadata metadata = null!;
+    ExternalMetadata metadata = null!;
 
     [SetUp]
-    public void SetUp() => metadata = new ExternalMetadata();
+    public void SetUp()
+    {
+        metadata = new ExternalMetadata();
+    }
 
-    private void resetSidecarCache()
+    void resetSidecarCache()
     {
         typeof(SidecarStore)
-            .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(metadata.Store, null);
+               .GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!
+               .SetValue(metadata.Store, null);
     }
 
     [Test]
@@ -26,15 +29,16 @@ public class SidecarBackfillTests
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         var sidecar = Path.Combine(wwwroot, "plex-metadata.json");
         resetSidecarCache();
+
         try
         {
             var rec = new SidecarItem
-            {
-                Title = "Backfill Test",
-                Guid = "plex://movie/aaaaaaaaaaaaaaaaaaaaaaaa",
-                Year = "2024",
-                Summary = "A summary written by the backfill."
-            };
+                      {
+                              Title = "Backfill Test",
+                              Guid = "plex://movie/aaaaaaaaaaaaaaaaaaaaaaaa",
+                              Year = "2024",
+                              Summary = "A summary written by the backfill."
+                      };
 
             metadata.Store.UpsertSidecar("backfilltestkey", rec);
 
@@ -44,23 +48,35 @@ public class SidecarBackfillTests
             Assert.That(raw, Does.Contain("plex://movie/aaaaaaaaaaaaaaaaaaaaaaaa"));
 
             resetSidecarCache();
+
             var item = new MediaItem
-            {
-                Id = 991,
-                Title = "Backfill Test",
-                FilePath = @"G:\Movies\Backfill.Test.2024.mp4",
-                Year = 2024
-            };
+                       {
+                               Id = 991,
+                               Title = "Backfill Test",
+                               FilePath = @"G:\Movies\Backfill.Test.2024.mp4",
+                               Year = 2024
+                       };
+
             Assert.That(metadata.HasRecord(item), Is.True,
-                "record written by the backfill must be served");
+                        "record written by the backfill must be served");
         }
         finally
         {
-            try { if (File.Exists(sidecar)) File.Delete(sidecar); } catch { }
+            try
+            {
+                if (File.Exists(sidecar))
+                {
+                    File.Delete(sidecar);
+                }
+            }
+            catch { }
+
             try
             {
                 if (Directory.Exists(wwwroot) && !Directory.EnumerateFileSystemEntries(wwwroot).Any())
+                {
                     Directory.Delete(wwwroot);
+                }
             }
             catch { }
             resetSidecarCache();
@@ -73,25 +89,36 @@ public class SidecarBackfillTests
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         var sidecar = Path.Combine(wwwroot, "plex-metadata.json");
         resetSidecarCache();
+
         try
         {
             var covered = new MediaItem
-            {
-                Id = 1,
-                Title = "Backfill Test",
-                FilePath = @"G:\Movies\Backfill.Test.2024.mp4",
-                Year = 2024
-            };
+                          {
+                                  Id = 1,
+                                  Title = "Backfill Test",
+                                  FilePath = @"G:\Movies\Backfill.Test.2024.mp4",
+                                  Year = 2024
+                          };
+
             metadata.Store.UpsertSidecar("backfilltestkey", new SidecarItem
-            {
-                Title = "Backfill Test",
-                Guid = "plex://movie/aaaaaaaaaaaaaaaaaaaaaaaa"
-            });
+                                                            {
+                                                                    Title = "Backfill Test",
+                                                                    Guid = "plex://movie/aaaaaaaaaaaaaaaaaaaaaaaa"
+                                                            });
 
             // Library is null -> the movie-only gate must reject it before any network call.
-            var gated = new MediaItem { Id = 2, Title = "Whatever", FilePath = @"G:\Movies\Whatever.2024.mp4", Year = 2024 };
+            var gated = new MediaItem
+                        {
+                                Id = 2,
+                                Title = "Whatever",
+                                FilePath = @"G:\Movies\Whatever.2024.mp4",
+                                Year = 2024
+                        };
 
-            var result = await metadata.BackfillAsync(new[] { covered, gated }, CancellationToken.None);
+            var result = await metadata.BackfillAsync(new[]
+                                                      {
+                                                              covered, gated
+                                                      }, CancellationToken.None);
 
             Assert.That(result.Scanned, Is.EqualTo(2));
             Assert.That(result.Present, Is.EqualTo(1), "covered item must be skipped");
@@ -100,15 +127,24 @@ public class SidecarBackfillTests
         }
         finally
         {
-            try { if (File.Exists(sidecar)) File.Delete(sidecar); } catch { }
+            try
+            {
+                if (File.Exists(sidecar))
+                {
+                    File.Delete(sidecar);
+                }
+            }
+            catch { }
+
             try
             {
                 if (Directory.Exists(wwwroot) && !Directory.EnumerateFileSystemEntries(wwwroot).Any())
+                {
                     Directory.Delete(wwwroot);
+                }
             }
             catch { }
             resetSidecarCache();
         }
     }
 }
-

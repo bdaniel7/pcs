@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 
 namespace PlexCompatibleServer.Infrastructure.Media;
@@ -8,18 +9,27 @@ public sealed class MediaStreamInfo
 {
     /// <summary>1 = video, 2 = audio, 3 = subtitle, matching Plex's streamType values.</summary>
     public int StreamType { get; set; }
+
     public string? Codec { get; set; }
 
     // ffprobe omits these per stream kind (an audio row has no width, a subtitle row has no
     // frame rate), so they must survive a JSON null rather than throw during deserialization.
     public int? Width { get; set; }
+
     public int? Height { get; set; }
+
     public int? Channels { get; set; }
+
     public int? Bitrate { get; set; }
+
     public double? FrameRate { get; set; }
+
     public int? SamplingRate { get; set; }
+
     public string? LanguageCode { get; set; }
+
     public string? Language { get; set; }
+
     /// <summary>"direct" for streams muxed into the file, "sidecar-subs" for external subtitle files.</summary>
     public string? Location { get; set; }
 }
@@ -28,73 +38,95 @@ public sealed class MediaStreamInfo
 public sealed class MediaFileInfo
 {
     public int DurationMs { get; set; }
+
     public int Bitrate { get; set; }
+
     public int Width { get; set; }
+
     public int Height { get; set; }
+
     public string? VideoCodec { get; set; }
+
     public string? VideoProfile { get; set; }
+
     public string? AudioCodec { get; set; }
+
     public int AudioChannels { get; set; }
+
     public double FrameRate { get; set; }
+
     public string? Container { get; set; }
+
     public List<MediaStreamInfo> Streams { get; set; } = new();
 }
 
 /// <summary>
-/// Reads container and stream metadata with ffprobe. The pure-managed duration probe stays as a
-/// fallback so scanning still works when ffprobe is unavailable, but ffprobe is what supplies the
-/// codec/resolution detail the player needs to decide on direct play.
+///     Reads container and stream metadata with ffprobe. The pure-managed duration probe stays as a
+///     fallback so scanning still works when ffprobe is unavailable, but ffprobe is what supplies the
+///     codec/resolution detail the player needs to decide on direct play.
 /// </summary>
 public static class MediaStreamProbe
 {
-    private static readonly JsonSerializerOptions json = new(JsonSerializerDefaults.Web);
+    static readonly JsonSerializerOptions json = new(JsonSerializerDefaults.Web);
 
     public static string ResolveFfprobe()
     {
         foreach (var candidate in candidates())
         {
             if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
+            {
                 return Path.GetFullPath(candidate);
+            }
         }
 
         return "";
     }
 
-    private static IEnumerable<string> candidates()
+    static IEnumerable<string> candidates()
     {
         yield return Environment.GetEnvironmentVariable("PLEX_FFPROBE") ?? "";
 
         var dir = Path.GetDirectoryName(FfmpegLocator.Executable);
-        if (dir is not null) yield return Path.Combine(dir, "ffprobe.exe");
+
+        if (dir is not null)
+        {
+            yield return Path.Combine(dir, "ffprobe.exe");
+        }
 
         foreach (var d in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
-            if (!string.IsNullOrWhiteSpace(d)) yield return Path.Combine(d, "ffprobe.exe");
+        {
+            if (!string.IsNullOrWhiteSpace(d))
+            {
+                yield return Path.Combine(d, "ffprobe.exe");
+            }
+        }
 
         yield return Path.Combine(AppContext.BaseDirectory, "ffprobe.exe");
         yield return Path.Combine(Directory.GetCurrentDirectory(), "ffprobe.exe");
     }
 
-    public static async Task<MediaFileInfo?> ProbeAsync(string path, CancellationToken ct = default)
+    public static async Task<MediaFileInfo?> ProbeAsync(string path,
+                                                        CancellationToken ct = default)
     {
         var ffprobe = ResolveFfprobe();
-        if (string.IsNullOrEmpty(ffprobe)) return null;
+
+        if (string.IsNullOrEmpty(ffprobe))
+        {
+            return null;
+        }
 
         var info = new ProcessStartInfo(ffprobe)
-        {
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
+                   {
+                           RedirectStandardError = true,
+                           RedirectStandardOutput = true,
+                           UseShellExecute = false,
+                           CreateNoWindow = true
+                   };
 
         foreach (var arg in new[]
-        {
-            "-v", "quiet",
-            "-print_format", "json",
-            "-show_format",
-            "-show_streams",
-            path
-        })
+                            {
+                                    "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path
+                            })
         {
             info.ArgumentList.Add(arg);
         }
@@ -102,7 +134,11 @@ public static class MediaStreamProbe
         try
         {
             using var process = Process.Start(info);
-            if (process is null) return null;
+
+            if (process is null)
+            {
+                return null;
+            }
 
             var stdout = process.StandardOutput.ReadToEndAsync(ct);
             var errors = process.StandardError.ReadToEndAsync(ct);
@@ -122,6 +158,7 @@ public static class MediaStreamProbe
         catch (Exception ex)
         {
             ProbeFailure = ex.ToString();
+
             return null;
         }
     }
@@ -129,9 +166,13 @@ public static class MediaStreamProbe
     /// <summary>Last probe failure, for diagnostics only.</summary>
     public static string ProbeFailure { get; private set; } = "";
 
-    private static MediaFileInfo? parse(string json, string path)
+    static MediaFileInfo? parse(string json,
+                                string path)
     {
-        if (string.IsNullOrWhiteSpace(json)) return null;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
 
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
@@ -144,19 +185,27 @@ public static class MediaStreamProbe
         if (root.TryGetProperty("format", out var format))
         {
             if (@double(format, "duration") is double seconds)
+            {
                 result.DurationMs = (int)Math.Round(seconds * 1000);
+            }
 
             result.Bitrate = @int(format, "bit_rate");
 
             if (format.TryGetProperty("format_name", out var fn) && fn.GetString() is { Length: > 0 } name)
+            {
                 result.Container = name.Split(',')[0];
+            }
         }
 
         if (extension is "mp4" or "m4v" or "mkv" or "avi" or "ts" or "wmv" or "mov")
+        {
             result.Container = extension;
+        }
 
         if (!root.TryGetProperty("streams", out var streams) || streams.ValueKind != JsonValueKind.Array)
+        {
             return result;
+        }
 
         foreach (var stream in streams.EnumerateArray())
         {
@@ -164,10 +213,10 @@ public static class MediaStreamProbe
             var codec = stream.TryGetProperty("codec_name", out var cn) ? cn.GetString() : null;
 
             var entry = new MediaStreamInfo
-            {
-                Codec = codec ?? "",
-                Location = "direct"
-            };
+                        {
+                                Codec = codec ?? "",
+                                Location = "direct"
+                        };
 
             switch (type)
             {
@@ -191,9 +240,14 @@ public static class MediaStreamProbe
                     entry.SamplingRate = @int(stream, "sample_rate");
 
                     var profile = stream.TryGetProperty("profile", out var pr) ? pr.GetString() : null;
-                    if (!string.IsNullOrEmpty(profile)) result.VideoProfile = profile;
+
+                    if (!string.IsNullOrEmpty(profile))
+                    {
+                        result.VideoProfile = profile;
+                    }
 
                     result.Streams.Add(entry);
+
                     break;
 
                 case "audio":
@@ -201,20 +255,28 @@ public static class MediaStreamProbe
                     entry.Channels = @int(stream, "channels");
                     entry.Bitrate = @int(stream, "bit_rate");
                     entry.SamplingRate = @int(stream, "sample_rate");
-                    result.AudioCodec = string.IsNullOrEmpty(result.AudioCodec) ? (codec ?? "") : result.AudioCodec;
+                    result.AudioCodec = string.IsNullOrEmpty(result.AudioCodec) ? codec ?? "" : result.AudioCodec;
                     result.AudioChannels = result.AudioChannels == 0 ? entry.Channels ?? 0 : result.AudioChannels;
                     entry.LanguageCode = lang(stream, "language");
+
                     entry.Language = stream.TryGetProperty("tags", out var at) &&
-                                     at.TryGetProperty("language", out var al) ? (al.GetString() ?? "") : "";
+                                     at.TryGetProperty("language", out var al)
+                                             ? al.GetString() ?? ""
+                                             : "";
                     result.Streams.Add(entry);
+
                     break;
 
                 case "subtitle":
                     entry.StreamType = 3;
                     entry.LanguageCode = lang(stream, "language");
+
                     entry.Language = stream.TryGetProperty("tags", out var st) &&
-                                     st.TryGetProperty("language", out var sl) ? (sl.GetString() ?? "") : "";
+                                     st.TryGetProperty("language", out var sl)
+                                             ? sl.GetString() ?? ""
+                                             : "";
                     result.Streams.Add(entry);
+
                     break;
             }
         }
@@ -222,49 +284,69 @@ public static class MediaStreamProbe
         return result;
     }
 
-    private static double @double(JsonElement source, string key)
+    static double @double(JsonElement source,
+                          string key)
     {
-        if (!source.TryGetProperty(key, out var value)) return 0;
+        if (!source.TryGetProperty(key, out var value))
+        {
+            return 0;
+        }
 
         return value.ValueKind switch
-        {
-            JsonValueKind.Number when value.TryGetDouble(out var direct) => direct,
-            JsonValueKind.String when double.TryParse(value.GetString(), System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var parsed) => parsed,
-            _ => 0
-        };
+               {
+                       JsonValueKind.Number when value.TryGetDouble(out var direct) => direct,
+                       JsonValueKind.String when double.TryParse(value.GetString(), NumberStyles.Float,
+                                                                 CultureInfo.InvariantCulture, out var parsed) => parsed,
+                       _ => 0
+               };
     }
 
-    private static string lang(JsonElement stream, string key) =>
-        stream.TryGetProperty("tags", out var tags) && tags.TryGetProperty(key, out var v) ? (v.GetString() ?? "") : "";
+    static string lang(JsonElement stream,
+                       string key)
+    {
+        return stream.TryGetProperty("tags", out var tags) && tags.TryGetProperty(key, out var v) ? v.GetString() ?? "" : "";
+    }
 
     /// <summary>ffprobe emits some numeric fields as JSON strings and some as numbers.</summary>
-    private static int @int(JsonElement stream, string key)
+    static int @int(JsonElement stream,
+                    string key)
     {
-        if (!stream.TryGetProperty(key, out var value)) return 0;
+        if (!stream.TryGetProperty(key, out var value))
+        {
+            return 0;
+        }
 
         return value.ValueKind switch
-        {
-            JsonValueKind.Number when value.TryGetInt32(out var direct) => direct,
-            JsonValueKind.String when int.TryParse(value.GetString(), out var parsed) => parsed,
-            _ => 0
-        };
+               {
+                       JsonValueKind.Number when value.TryGetInt32(out var direct)               => direct,
+                       JsonValueKind.String when int.TryParse(value.GetString(), out var parsed) => parsed,
+                       _                                                                         => 0
+               };
     }
 
-    private static double frameRate(JsonElement stream)
+    static double frameRate(JsonElement stream)
     {
         if (@double(stream, "r_frame_rate") is double value && value > 0)
+        {
             return Math.Round(value, 3);
+        }
 
         if (!stream.TryGetProperty("r_frame_rate", out var rf) || rf.GetString() is not { Length: > 0 } text)
+        {
             return 0;
+        }
 
         var parts = text.Split('/');
-        if (parts.Length != 2) return 0;
-        if (!double.TryParse(parts[0], System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var num) ||
-            !double.TryParse(parts[1], System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var den) || den == 0)
+
+        if (parts.Length != 2)
+        {
+            return 0;
+        }
+
+        if (!double.TryParse(parts[0], NumberStyles.Float,
+                             CultureInfo.InvariantCulture, out var num) ||
+            !double.TryParse(parts[1], NumberStyles.Float,
+                             CultureInfo.InvariantCulture, out var den) || den == 0)
         {
             return 0;
         }

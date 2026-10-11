@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,7 +17,7 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class OfficialArtworkTests
 {
-    private string dir = "";
+    string dir = "";
 
     [SetUp]
     public void SetUp()
@@ -28,10 +29,11 @@ public class OfficialArtworkTests
     [TearDown]
     public void TearDown()
     {
-        try { Directory.Delete(dir, true); } catch { }
+        try { Directory.Delete(dir, true); }
+        catch { }
     }
 
-    private static byte[] fakeJpeg()
+    static byte[] fakeJpeg()
     {
         var bytes = new byte[600];
         bytes[0] = 0xFF;
@@ -41,9 +43,9 @@ public class OfficialArtworkTests
         return bytes;
     }
 
-    private sealed class StubHandler : HttpMessageHandler
+    sealed class StubHandler : HttpMessageHandler
     {
-        private readonly Func<HttpResponseMessage> respond;
+        readonly Func<HttpResponseMessage> respond;
 
         public StubHandler(Func<HttpResponseMessage> respond) => this.respond = respond;
 
@@ -58,14 +60,23 @@ public class OfficialArtworkTests
         }
     }
 
-    private static HttpResponseMessage ok(HttpContent content) =>
-        new(System.Net.HttpStatusCode.OK) { Content = content };
+    static HttpResponseMessage ok(HttpContent content)
+    {
+        return new HttpResponseMessage(HttpStatusCode.OK)
+               {
+                       Content = content
+               };
+    }
 
     [Test]
     public async Task EnsureAsync_downloads_once_and_reuses_the_cached_file()
     {
         var handler = new StubHandler(() => ok(new ByteArrayContent(fakeJpeg())));
-        var cache = new RemoteArtworkCache(new MediaArtOptions { CacheDirectory = dir }, handler);
+
+        var cache = new RemoteArtworkCache(new MediaArtOptions
+                                           {
+                                                   CacheDirectory = dir
+                                           }, handler);
         var url = "https://metadata-static.plex.tv/poster.jpg";
 
         var first = await cache.EnsureAsync(url, CancellationToken.None);
@@ -84,17 +95,26 @@ public class OfficialArtworkTests
     public async Task EnsureAsync_rejects_non_image_bodies_and_http_errors()
     {
         var html = new StubHandler(() => ok(new StringContent(
-            "<html>" + new string('x', 600) + "</html>", Encoding.UTF8, "text/html")));
-        var cache = new RemoteArtworkCache(new MediaArtOptions { CacheDirectory = dir }, html);
+                                                              "<html>" + new string('x', 600) + "</html>", Encoding.UTF8, "text/html")));
+
+        var cache = new RemoteArtworkCache(new MediaArtOptions
+                                           {
+                                                   CacheDirectory = dir
+                                           }, html);
 
         Assert.That(await cache.EnsureAsync("https://example/fake.jpg", CancellationToken.None),
-            Is.Null, "an error page must never be written where the image routes serve from");
+                    Is.Null, "an error page must never be written where the image routes serve from");
 
         var missing = new StubHandler(() =>
-            new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
-        var cache2 = new RemoteArtworkCache(new MediaArtOptions { CacheDirectory = dir }, missing);
+                                              new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        var cache2 = new RemoteArtworkCache(new MediaArtOptions
+                                            {
+                                                    CacheDirectory = dir
+                                            }, missing);
+
         Assert.That(await cache2.EnsureAsync("https://example/gone.jpg", CancellationToken.None),
-            Is.Null);
+                    Is.Null);
 
         Assert.That(Directory.GetFiles(dir, "official-*"), Is.Empty);
     }
@@ -122,43 +142,48 @@ public class OfficialArtworkTests
         webp[11] = (byte)'P';
         Assert.That(RemoteArtworkCache.SniffExtension(webp), Is.EqualTo(".webp"));
 
-        var tiny = new byte[] { 0xFF, 0xD8, 0xFF };
+        var tiny = new byte[]
+                   {
+                           0xFF, 0xD8, 0xFF
+                   };
         Assert.That(RemoteArtworkCache.SniffExtension(tiny), Is.Null, "a stub body is not a poster");
         Assert.That(RemoteArtworkCache.SniffExtension(Array.Empty<byte>()), Is.Null);
     }
 
-    private static MediaItem item(int id, LibraryType type, string? officialParent = null,
-                                  string? officialGrandparent = null)
+    static MediaItem item(int id,
+                          LibraryType type,
+                          string? officialParent = null,
+                          string? officialGrandparent = null)
     {
         var library = new MediaLibrary
-        {
-            Id = type == LibraryType.Movie ? 1 : 2,
-            Name = type == LibraryType.Movie ? "Movies" : "TV",
-            RootPath = "Z:\\",
-            Type = type
-        };
+                      {
+                              Id = type == LibraryType.Movie ? 1 : 2,
+                              Name = type == LibraryType.Movie ? "Movies" : "TV",
+                              RootPath = "Z:\\",
+                              Type = type
+                      };
 
         return new MediaItem
-        {
-            Id = id,
-            LibraryId = library.Id,
-            Library = library,
-            FilePath = type == LibraryType.Movie
-                ? @"Z:\Movies\Film.2024.mkv"
-                : @"Z:\TV\Show.S01E01.mkv",
-            Title = type == LibraryType.Movie ? "Film" : "Show",
-            UpdatedAt = DateTimeOffset.FromUnixTimeSeconds(1790948816),
-            OfficialParentPosterPath = officialParent,
-            OfficialGrandparentPosterPath = officialGrandparent
-        };
+               {
+                       Id = id,
+                       LibraryId = library.Id,
+                       Library = library,
+                       FilePath = type == LibraryType.Movie
+                                          ? @"Z:\Movies\Film.2024.mkv"
+                                          : @"Z:\TV\Show.S01E01.mkv",
+                       Title = type == LibraryType.Movie ? "Film" : "Show",
+                       UpdatedAt = DateTimeOffset.FromUnixTimeSeconds(1790948816),
+                       OfficialParentPosterPath = officialParent,
+                       OfficialGrandparentPosterPath = officialGrandparent
+               };
     }
 
     [Test]
     public void ToVideo_states_season_and_show_poster_urls_only_with_official_art()
     {
         var covered = item(44, LibraryType.Show,
-            officialParent: @"C:\art\season.jpg",
-            officialGrandparent: @"C:\art\show.jpg");
+                           @"C:\art\season.jpg",
+                           @"C:\art\show.jpg");
         var video = VideoMapper.ToVideo(covered);
 
         Assert.That(video.ParentThumb, Is.EqualTo("/library/metadata/44/parentThumb/1790948816"));
@@ -177,49 +202,90 @@ public class OfficialArtworkTests
         Assert.That(movieVideo.GrandparentThumb, Is.Empty);
     }
 
-    private sealed class FakeRepo(MediaItem item) : IMediaRepository
+    sealed class FakeRepo(MediaItem item) : IMediaRepository
     {
         public Task<IReadOnlyList<MediaLibrary>> GetLibrariesAsync(CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaLibrary>>([item.Library]);
+        {
+            return Task.FromResult<IReadOnlyList<MediaLibrary>>([item.Library]);
+        }
 
-        public Task<MediaLibrary?> GetLibraryAsync(int id, CancellationToken ct)
-            => Task.FromResult<MediaLibrary?>(item.Library);
+        public Task<MediaLibrary?> GetLibraryAsync(int id,
+                                                   CancellationToken ct)
+        {
+            return Task.FromResult<MediaLibrary?>(item.Library);
+        }
 
-        public Task<IReadOnlyList<MediaItem>> GetItemsAsync(int libraryId, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaItem>>([item]);
+        public Task<IReadOnlyList<MediaItem>> GetItemsAsync(int libraryId,
+                                                            CancellationToken ct)
+        {
+            return Task.FromResult<IReadOnlyList<MediaItem>>([item]);
+        }
 
-        public Task<MediaItem?> GetItemAsync(int id, CancellationToken ct)
-            => Task.FromResult(item.Id == id ? item : null);
-
-        public Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaItem>>([item]);
-
-        public Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries, CancellationToken ct)
-            => Task.CompletedTask;
-
-        public Task SaveProgressAsync(int id, long timeMs, long durationMs, DateTimeOffset viewedAt,
-                                      CancellationToken ct)
-            => Task.CompletedTask;
-
-        public Task MarkWatchedAsync(int id, DateTimeOffset viewedAt, CancellationToken ct)
-            => Task.CompletedTask;
-
-        public Task ClearProgressAsync(int id, CancellationToken ct) => Task.CompletedTask;
-
-        public Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId, int limit,
-                                                                 CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaItem>>([]);
-
-        public Task DismissFromContinueWatchingAsync(int id, CancellationToken ct)
-            => Task.CompletedTask;
-
-        public Task SaveOfficialArtworkAsync(int id, string? posterPath, string? artPath,
-                                             string? parentPosterPath, string? grandparentPosterPath,
+        public Task<MediaItem?> GetItemAsync(int id,
                                              CancellationToken ct)
-            => Task.CompletedTask;
+        {
+            return Task.FromResult(item.Id == id ? item : null);
+        }
+
+        public Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds,
+                                                                       CancellationToken ct)
+        {
+            return Task.FromResult<IReadOnlyList<MediaItem>>([item]);
+        }
+
+        public Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries,
+                                     CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task SaveProgressAsync(int id,
+                                      long timeMs,
+                                      long durationMs,
+                                      DateTimeOffset viewedAt,
+                                      CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task MarkWatchedAsync(int id,
+                                     DateTimeOffset viewedAt,
+                                     CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task ClearProgressAsync(int id,
+                                       CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId,
+                                                                 int limit,
+                                                                 CancellationToken ct)
+        {
+            return Task.FromResult<IReadOnlyList<MediaItem>>([]);
+        }
+
+        public Task DismissFromContinueWatchingAsync(int id,
+                                                     CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task SaveOfficialArtworkAsync(int id,
+                                             string? posterPath,
+                                             string? artPath,
+                                             string? parentPosterPath,
+                                             string? grandparentPosterPath,
+                                             CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
     }
 
-    private string touch(string name)
+    string touch(string name)
     {
         var path = Path.Combine(dir, name);
         File.WriteAllBytes(path, fakeJpeg());
@@ -235,6 +301,7 @@ public class OfficialArtworkTests
         var item = OfficialArtworkTests.item(3, LibraryType.Movie);
         item.OfficialPosterPath = official;
         item.PosterPath = frame;
+
         var controller = new MetadataController(new FakeRepo(item), new ServerOptions(),
                                                 new StreamSelectionStore(), new ExternalMetadata());
 
@@ -244,8 +311,9 @@ public class OfficialArtworkTests
 
         item.OfficialPosterPath = Path.Combine(dir, "deleted.jpg");
         var fallback = await controller.Thumb(3, CancellationToken.None) as PhysicalFileResult;
+
         Assert.That(fallback!.FileName, Is.EqualTo(frame),
-            "a vanished official file must fall back to the frame extract");
+                    "a vanished official file must fall back to the frame extract");
     }
 
     [Test]
@@ -256,6 +324,7 @@ public class OfficialArtworkTests
         var frame = touch("frame-episode.jpg");
         var item = OfficialArtworkTests.item(44, LibraryType.Show, season, show);
         item.PosterPath = frame;
+
         var controller = new MetadataController(new FakeRepo(item), new ServerOptions(),
                                                 new StreamSelectionStore(), new ExternalMetadata());
 
@@ -268,8 +337,9 @@ public class OfficialArtworkTests
 
         item.OfficialGrandparentPosterPath = null;
         var frameOnly = await controller.ParentThumb(44, CancellationToken.None) as PhysicalFileResult;
+
         Assert.That(frameOnly!.FileName, Is.EqualTo(frame),
-            "the season grid must never get a 404 from a card it was told to draw");
+                    "the season grid must never get a 404 from a card it was told to draw");
 
         var grand = await controller.GrandparentThumb(44, CancellationToken.None) as PhysicalFileResult;
         Assert.That(grand!.FileName, Is.EqualTo(frame));
@@ -290,8 +360,8 @@ public class OfficialArtworkTests
         Assert.That(parent!.FileName, Is.EqualTo(season));
 
         var grandparent = await controller.Transcode(
-            "/library/metadata/44/grandparentThumb/1790948816", 600, 900, "")
-            as PhysicalFileResult;
+                                                     "/library/metadata/44/grandparentThumb/1790948816", 600, 900, "")
+                                  as PhysicalFileResult;
         Assert.That(grandparent!.FileName, Is.EqualTo(show));
 
         var thumb = await controller.Transcode("/library/metadata/44/thumb/1790948816",
@@ -305,8 +375,13 @@ public class OfficialArtworkTests
         Assert.That(result, Is.InstanceOf<FileContentResult>());
     }
 
-    private ImageTranscoder transcoder() =>
-        new(new MediaArtOptions { CacheDirectory = dir }, NullLogger<ImageTranscoder>.Instance);
+    ImageTranscoder transcoder()
+    {
+        return new ImageTranscoder(new MediaArtOptions
+                                   {
+                                           CacheDirectory = dir
+                                   }, NullLogger<ImageTranscoder>.Instance);
+    }
 
     [Test]
     public void FitWithin_preserves_aspect_and_only_enlarges_when_asked()
@@ -314,19 +389,22 @@ public class OfficialArtworkTests
         Assert.That(ImageTranscoder.FitWithin(960, 1440, 240, 360, true), Is.EqualTo((240, 360)));
         Assert.That(ImageTranscoder.FitWithin(1280, 720, 240, 360, true), Is.EqualTo((240, 135)));
         Assert.That(ImageTranscoder.FitWithin(1600, 900, 320, 180, false), Is.EqualTo((320, 180)));
+
         Assert.That(ImageTranscoder.FitWithin(100, 150, 240, 360, false), Is.EqualTo((100, 150)),
-            "without upscale the source must go back untouched");
+                    "without upscale the source must go back untouched");
         Assert.That(ImageTranscoder.FitWithin(100, 150, 240, 360, true), Is.EqualTo((240, 360)));
+
         Assert.That(ImageTranscoder.FitWithin(1, 1000, 360, 240, true), Is.EqualTo((1, 240)),
-            "a sliver of an image still keeps at least one pixel of width");
+                    "a sliver of an image still keeps at least one pixel of width");
     }
 
     [Test]
     public void ImageSize_reads_png_and_jpeg_headers_and_rejects_anything_else()
     {
         var png = Path.Combine(dir, "pixel.png");
+
         File.WriteAllBytes(png, Convert.FromBase64String(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="));
+                                                         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="));
         Assert.That(ImageSize.TryGet(png, out var pixelW, out var pixelH), Is.True);
         Assert.That((pixelW, pixelH), Is.EqualTo((1, 1)));
 
@@ -360,64 +438,77 @@ public class OfficialArtworkTests
         // Undecodable payload (or no ffmpeg on the machine): the original comes back either way.
         var undecodable = Path.Combine(dir, "undecodable.jpg");
         File.WriteAllBytes(undecodable, jpegHeader(960, 1440));
+
         Assert.That(await transcoder.ResizeAsync(undecodable, 240, 360, true, default),
-            Is.EqualTo(undecodable));
+                    Is.EqualTo(undecodable));
 
         // No size asked, or nothing on disk: pass the input through untouched.
         Assert.That(await transcoder.ResizeAsync(source, 0, 0, true, default), Is.EqualTo(source));
         var missing = Path.Combine(dir, "missing.jpg");
+
         Assert.That(await transcoder.ResizeAsync(missing, 240, 360, true, default),
-            Is.EqualTo(missing));
+                    Is.EqualTo(missing));
     }
 
-    private static byte[] jpegHeader(int width, int height) =>
-    [
-        0xFF, 0xD8,
-        0xFF, 0xE0, 0x00, 0x10,                     // APP0/JFIF, 16 bytes
-        (byte)'J', (byte)'F', (byte)'I', (byte)'F', 0x00,
-        0x01, 0x02, 0x00, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0x00,
-        0xFF, 0xC0, 0x00, 0x11, 0x08,
-        (byte)(height >> 8), (byte)height,
-        (byte)(width >> 8), (byte)width,
-        0x01, 0x01, 0x11, 0x00,
-        0x02, 0x11, 0x01,
-        0x03, 0x11, 0x01,
-        0xFF, 0xD9
-    ];
-
-    private sealed class TestFactory(DbContextOptions<MediaDbContext> options)
-        : IDbContextFactory<MediaDbContext>
+    static byte[] jpegHeader(int width,
+                             int height)
     {
-        public MediaDbContext CreateDbContext() => new(options);
+        return
+        [
+                0xFF, 0xD8,
+                0xFF, 0xE0, 0x00, 0x10, // APP0/JFIF, 16 bytes
+                (byte)'J', (byte)'F', (byte)'I', (byte)'F', 0x00,
+                0x01, 0x02, 0x00, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0x00,
+                0xFF, 0xC0, 0x00, 0x11, 0x08,
+                (byte)(height >> 8), (byte)height,
+                (byte)(width >> 8), (byte)width,
+                0x01, 0x01, 0x11, 0x00,
+                0x02, 0x11, 0x01,
+                0x03, 0x11, 0x01,
+                0xFF, 0xD9
+        ];
+    }
+
+    sealed class TestFactory(DbContextOptions<MediaDbContext> options)
+            : IDbContextFactory<MediaDbContext>
+    {
+        public MediaDbContext CreateDbContext()
+        {
+            return new MediaDbContext(options);
+        }
     }
 
     [Test]
     public async Task SaveOfficialArtworkAsync_writes_new_paths_and_null_keeps_current_ones()
     {
         var dbPath = Path.Combine(Path.GetTempPath(),
-            "pcs-official-art-" + Guid.NewGuid().ToString("N") + ".db");
+                                  "pcs-official-art-" + Guid.NewGuid().ToString("N") + ".db");
+
         var options = new DbContextOptionsBuilder<MediaDbContext>()
-            .UseSqlite($"Data Source={dbPath}").Options;
+                     .UseSqlite($"Data Source={dbPath}").Options;
         var factory = new TestFactory(options);
 
         int id;
+
         await using (var db = factory.CreateDbContext())
         {
             await db.Database.EnsureCreatedAsync();
+
             var library = new MediaLibrary
-            {
-                Name = "Movies",
-                RootPath = dir,
-                Type = LibraryType.Movie
-            };
+                          {
+                                  Name = "Movies",
+                                  RootPath = dir,
+                                  Type = LibraryType.Movie
+                          };
             db.Libraries.Add(library);
             await db.SaveChangesAsync();
+
             var item = new MediaItem
-            {
-                LibraryId = library.Id,
-                FilePath = Path.Combine(dir, "Film.mkv"),
-                Title = "Film"
-            };
+                       {
+                               LibraryId = library.Id,
+                               FilePath = Path.Combine(dir, "Film.mkv"),
+                               Title = "Film"
+                       };
             db.Items.Add(item);
             await db.SaveChangesAsync();
             id = item.Id;
@@ -426,6 +517,7 @@ public class OfficialArtworkTests
         try
         {
             var repo = new MediaRepository(factory);
+
             await repo.SaveOfficialArtworkAsync(id, "/art/poster.jpg", "/art/backdrop.jpg",
                                                 null, null, CancellationToken.None);
 
@@ -444,8 +536,14 @@ public class OfficialArtworkTests
         }
         finally
         {
-            foreach (var p in new[] { dbPath, dbPath + "-wal", dbPath + "-shm" })
-                try { File.Delete(p); } catch { }
+            foreach (var p in new[]
+                              {
+                                      dbPath, dbPath + "-wal", dbPath + "-shm"
+                              })
+            {
+                try { File.Delete(p); }
+                catch { }
+            }
         }
     }
 }

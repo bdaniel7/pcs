@@ -6,7 +6,7 @@ namespace PlexCompatibleServer.Tests;
 
 public sealed class MediaDurationProbeTests
 {
-    private string directory = string.Empty;
+    string directory = string.Empty;
 
     [SetUp]
     public void SetUp()
@@ -19,14 +19,16 @@ public sealed class MediaDurationProbeTests
     public void TearDown()
     {
         if (Directory.Exists(directory))
-            Directory.Delete(directory, recursive: true);
+        {
+            Directory.Delete(directory, true);
+        }
     }
 
     [Test]
     public void ReadsMatroskaDuration()
     {
         var path = Path.Combine(directory, "movie.mkv");
-        writeMatroska(path, timecodeScale: 1_000_000, durationTicks: 3_661_000);
+        writeMatroska(path, 1_000_000, 3_661_000);
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.EqualTo(3_661_000));
     }
@@ -35,7 +37,7 @@ public sealed class MediaDurationProbeTests
     public void ReadsMatroskaDurationWithNonDefaultTimecodeScale()
     {
         var path = Path.Combine(directory, "movie.mkv");
-        writeMatroska(path, timecodeScale: 100_000, durationTicks: 73_220_000);
+        writeMatroska(path, 100_000, 73_220_000);
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.EqualTo(7_322_000));
     }
@@ -44,7 +46,7 @@ public sealed class MediaDurationProbeTests
     public void ReadsMatroskaFloat32Duration()
     {
         var path = Path.Combine(directory, "movie.mkv");
-        writeMatroska(path, timecodeScale: 1_000_000, durationTicks: 3_661_000, payloadSize: 4);
+        writeMatroska(path, 1_000_000, 3_661_000, 4);
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.EqualTo(3_661_000));
     }
@@ -65,7 +67,7 @@ public sealed class MediaDurationProbeTests
         // which is close to the unknown-size marker and must not be mistaken
         // for one, otherwise the walk skips Info and returns null.
         var path = Path.Combine(directory, "seekhead.mkv");
-        writeMatroskaWithSeekHead(path, timecodeScale: 1_000_000, durationTicks: 3_661_000, seekHeadSize: 79);
+        writeMatroskaWithSeekHead(path, 1_000_000, 3_661_000, 79);
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.EqualTo(3_661_000));
     }
@@ -76,7 +78,7 @@ public sealed class MediaDurationProbeTests
         // Streaming-friendly muxers place moov after mdat, far past any small
         // header window, so the walk must not stop at a size cap.
         var path = Path.Combine(directory, "moov-last.mp4");
-        writeIsoBaseMedia(path, version: 0, timescale: 1000, duration: 2_842_176, moovLast: true);
+        writeIsoBaseMedia(path, 0, 1000, 2_842_176, true);
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.EqualTo(2_842_176));
     }
@@ -87,7 +89,7 @@ public sealed class MediaDurationProbeTests
         // EBML floats are big-endian; a little-endian interpretation of the
         // same bytes yields a wildly wrong value.
         var path = Path.Combine(directory, "endian.mkv");
-        writeMatroska(path, timecodeScale: 1_000_000, durationTicks: 3_611.3125, payloadSize: 4);
+        writeMatroska(path, 1_000_000, 3_611.3125, 4);
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.EqualTo(3_611));
     }
@@ -106,7 +108,11 @@ public sealed class MediaDurationProbeTests
         writeUInt32(header, 16, 2_842_176);
 
         var file = new MemoryStream();
-        file.Write(box("ftyp", new byte[] { 0x69, 0x73, 0x6F, 0x6D, 0, 0, 2, 0 }));
+
+        file.Write(box("ftyp", new byte[]
+                               {
+                                       0x69, 0x73, 0x6F, 0x6D, 0, 0, 2, 0
+                               }));
         file.Write(box("free", Array.Empty<byte>()));
         file.Write(box("mdat", new byte[256]));
         file.Write(box("moov", box("mvhd", header)));
@@ -120,7 +126,7 @@ public sealed class MediaDurationProbeTests
     public void ReadsIsoBaseMediaVersionZeroDuration()
     {
         var path = Path.Combine(directory, "movie.mp4");
-        writeIsoBaseMedia(path, version: 0, timescale: 1000, duration: 3_661_000);
+        writeIsoBaseMedia(path, 0, 1000, 3_661_000);
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.EqualTo(3_661_000));
     }
@@ -129,7 +135,7 @@ public sealed class MediaDurationProbeTests
     public void ReadsIsoBaseMediaVersionOneDuration()
     {
         var path = Path.Combine(directory, "movie.mp4");
-        writeIsoBaseMedia(path, version: 1, timescale: 600, duration: 2_196_600);
+        writeIsoBaseMedia(path, 1, 600, 2_196_600);
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.EqualTo(3_661_000));
     }
@@ -138,7 +144,7 @@ public sealed class MediaDurationProbeTests
     public void ReadsIsoBaseMediaWithMoovAfterMdat()
     {
         var path = Path.Combine(directory, "movie.m4v");
-        writeIsoBaseMedia(path, version: 0, timescale: 90000, duration: 329_490_000, moovLast: true);
+        writeIsoBaseMedia(path, 0, 90000, 329_490_000, true);
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.EqualTo(3_661_000));
     }
@@ -147,11 +153,12 @@ public sealed class MediaDurationProbeTests
     public async Task Async_probe_matches_sync_probe()
     {
         var path = Path.Combine(directory, "async.mp4");
-        writeIsoBaseMedia(path, version: 0, timescale: 1000, duration: 3_661_000);
+        writeIsoBaseMedia(path, 0, 1000, 3_661_000);
 
         Assert.That(await MediaDurationProbe.GetDurationMsAsync(path, CancellationToken.None), Is.EqualTo(3_661_000));
+
         Assert.That(await MediaDurationProbe.GetDurationMsAsync(
-            Path.Combine(directory, "missing.mp4"), CancellationToken.None), Is.Null);
+                                                                Path.Combine(directory, "missing.mp4"), CancellationToken.None), Is.Null);
     }
 
     [Test]
@@ -167,7 +174,7 @@ public sealed class MediaDurationProbeTests
     public void ReturnsNullForTruncatedFile()
     {
         var path = Path.Combine(directory, "truncated.mp4");
-        var full = buildIsoBaseMedia(version: 0, timescale: 1000, duration: 3_661_000, moovLast: false);
+        var full = buildIsoBaseMedia(0, 1000, 3_661_000, false);
         File.WriteAllBytes(path, full.Take(20).ToArray());
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.Null);
@@ -183,19 +190,29 @@ public sealed class MediaDurationProbeTests
     public void ReturnsNullForZeroDuration()
     {
         var path = Path.Combine(directory, "empty.mp4");
-        writeIsoBaseMedia(path, version: 0, timescale: 1000, duration: 0);
+        writeIsoBaseMedia(path, 0, 1000, 0);
 
         Assert.That(MediaDurationProbe.GetDurationMs(path), Is.Null);
     }
 
-    private static void writeIsoBaseMedia(string path, byte version, uint timescale, ulong duration, bool moovLast = false)
+    static void writeIsoBaseMedia(string path,
+                                  byte version,
+                                  uint timescale,
+                                  ulong duration,
+                                  bool moovLast = false)
     {
         File.WriteAllBytes(path, buildIsoBaseMedia(version, timescale, duration, moovLast));
     }
 
-    private static byte[] buildIsoBaseMedia(byte version, uint timescale, ulong duration, bool moovLast)
+    static byte[] buildIsoBaseMedia(byte version,
+                                    uint timescale,
+                                    ulong duration,
+                                    bool moovLast)
     {
-        var fileType = box("ftyp", new byte[] { 0x69, 0x73, 0x6F, 0x6D, 0x00, 0x00, 0x02, 0x00 });
+        var fileType = box("ftyp", new byte[]
+                                   {
+                                           0x69, 0x73, 0x6F, 0x6D, 0x00, 0x00, 0x02, 0x00
+                                   });
 
         var wide = version == 1;
         var movieHeader = new byte[wide ? 32 : 20];
@@ -220,18 +237,21 @@ public sealed class MediaDurationProbeTests
         var media = box("mdat", new byte[512]);
 
         return moovLast
-            ? [.. fileType, .. media, .. movie]
-            : [.. fileType, .. movie, .. media];
+                       ? [.. fileType, .. media, .. movie]
+                       : [.. fileType, .. movie, .. media];
     }
 
-    private static void writeMatroska(string path, ulong timecodeScale, double durationTicks, int payloadSize = 8)
+    static void writeMatroska(string path,
+                              ulong timecodeScale,
+                              double durationTicks,
+                              int payloadSize = 8)
     {
         var scale = new byte[8];
         writeUInt64(scale, 0, timecodeScale);
 
         var duration = payloadSize == 4
-            ? toBigEndian(BitConverter.GetBytes((float)durationTicks))
-            : toBigEndian(BitConverter.GetBytes(durationTicks));
+                               ? toBigEndian(BitConverter.GetBytes((float)durationTicks))
+                               : toBigEndian(BitConverter.GetBytes(durationTicks));
 
         var info = new MemoryStream();
         writeEbmlElement(info, [0x2A, 0xD7, 0xB1], scale);
@@ -247,7 +267,10 @@ public sealed class MediaDurationProbeTests
         File.WriteAllBytes(path, file.ToArray());
     }
 
-    private static void writeMatroskaWithSeekHead(string path, ulong timecodeScale, double durationTicks, int seekHeadSize)
+    static void writeMatroskaWithSeekHead(string path,
+                                          ulong timecodeScale,
+                                          double durationTicks,
+                                          int seekHeadSize)
     {
         var scale = new byte[8];
         writeUInt64(scale, 0, timecodeScale);
@@ -257,6 +280,7 @@ public sealed class MediaDurationProbeTests
         writeEbmlElement(info, [0x44, 0x89], toBigEndian(BitConverter.GetBytes(durationTicks)));
 
         var segment = new MemoryStream();
+
         // SeekHead first, sized in the range that must not read as unknown-size.
         writeEbmlElement(segment, [0x11, 0x4D, 0x9B, 0x74], new byte[seekHeadSize]);
         writeEbmlElement(segment, [0x15, 0x49, 0xA9, 0x66], info.ToArray());
@@ -268,7 +292,7 @@ public sealed class MediaDurationProbeTests
         File.WriteAllBytes(path, file.ToArray());
     }
 
-    private static void writeMatroskaWithoutDuration(string path)
+    static void writeMatroskaWithoutDuration(string path)
     {
         var scale = new byte[8];
         writeUInt64(scale, 0, 1_000_000);
@@ -286,32 +310,41 @@ public sealed class MediaDurationProbeTests
         File.WriteAllBytes(path, file.ToArray());
     }
 
-    private static byte[] toBigEndian(byte[] bytes)
+    static byte[] toBigEndian(byte[] bytes)
     {
-        if (!BitConverter.IsLittleEndian) return bytes;
+        if (!BitConverter.IsLittleEndian)
+        {
+            return bytes;
+        }
         var copy = (byte[])bytes.Clone();
         Array.Reverse(copy);
+
         return copy;
     }
 
-    private static byte[] box(string type, byte[] payload)
+    static byte[] box(string type,
+                      byte[] payload)
     {
         var size = 8 + payload.Length;
         var buffer = new byte[size];
         writeUInt32(buffer, 0, (uint)size);
         Encoding.ASCII.GetBytes(type).CopyTo(buffer, 4);
         payload.CopyTo(buffer, 8);
+
         return buffer;
     }
 
-    private static void writeEbmlElement(Stream stream, byte[] id, byte[] payload)
+    static void writeEbmlElement(Stream stream,
+                                 byte[] id,
+                                 byte[] payload)
     {
         stream.Write(id);
         writeEbmlSize(stream, (ulong)payload.Length);
         stream.Write(payload);
     }
 
-    private static void writeEbmlSize(Stream stream, ulong value)
+    static void writeEbmlSize(Stream stream,
+                              ulong value)
     {
         if (value < 0x7F)
         {
@@ -330,7 +363,9 @@ public sealed class MediaDurationProbeTests
         }
     }
 
-    private static void writeUInt32(byte[] buffer, int offset, uint value)
+    static void writeUInt32(byte[] buffer,
+                            int offset,
+                            uint value)
     {
         buffer[offset] = (byte)(value >> 24);
         buffer[offset + 1] = (byte)(value >> 16);
@@ -338,9 +373,13 @@ public sealed class MediaDurationProbeTests
         buffer[offset + 3] = (byte)value;
     }
 
-    private static void writeUInt64(byte[] buffer, int offset, ulong value)
+    static void writeUInt64(byte[] buffer,
+                            int offset,
+                            ulong value)
     {
         for (var i = 0; i < 8; i++)
+        {
             buffer[offset + i] = (byte)(value >> (56 - i * 8));
+        }
     }
 }

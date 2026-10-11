@@ -4,16 +4,16 @@ using PlexCompatibleServer.Infrastructure.Media;
 namespace PlexCompatibleServer.Tests;
 
 /// <summary>
-/// Sidecar discovery, i.e. which .srt files in a folder belong to a given video. The tagged
-/// forms ("Movie.en.srt") are what real libraries use, so a movie whose only subtitle is named
-/// that way has to come back with a track instead of none.
+///     Sidecar discovery, i.e. which .srt files in a folder belong to a given video. The tagged
+///     forms ("Movie.en.srt") are what real libraries use, so a movie whose only subtitle is named
+///     that way has to come back with a track instead of none.
 /// </summary>
 [TestFixture]
 public class SidecarSubtitleTests
 {
-    private const string VIDEO_NAME = "Emily.The.Criminal.2022.1080p.WEBRip.x264.AAC5.1-[YTS.MX].mp4";
+    const string VIDEO_NAME = "Emily.The.Criminal.2022.1080p.WEBRip.x264.AAC5.1-[YTS.MX].mp4";
 
-    private string dir = "";
+    string dir = "";
 
     [SetUp]
     public void SetUp()
@@ -25,24 +25,32 @@ public class SidecarSubtitleTests
     [TearDown]
     public void TearDown()
     {
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        if (Directory.Exists(dir))
+        {
+            Directory.Delete(dir, true);
+        }
     }
 
-    private string video(string name = VIDEO_NAME)
+    string video(string name = VIDEO_NAME)
     {
         var path = Path.Combine(dir, name);
         File.WriteAllBytes(path, [0x00]);
+
         return path;
     }
 
-    private string sidecar(string name)
+    string sidecar(string name)
     {
         var path = Path.Combine(dir, name);
         File.WriteAllText(path, "1\n00:00:01,000 --> 00:00:02,000\nhello\n");
+
         return path;
     }
 
-    private static string baseName(string videoName) => Path.GetFileNameWithoutExtension(videoName);
+    static string baseName(string videoName)
+    {
+        return Path.GetFileNameWithoutExtension(videoName);
+    }
 
     [Test]
     public void VideoWithoutSidecarHasNoTracks()
@@ -178,10 +186,13 @@ public class SidecarSubtitleTests
     public void FilesThatDoNotBelongToTheVideoAreIgnored()
     {
         var video = this.video();
+
         // Right extension, wrong stem.
         sidecar("Some.Other.Movie.2019.en.srt");
+
         // Right stem, but the trailing token is not a language or a qualifier.
         sidecar(baseName(VIDEO_NAME) + ".extras.srt");
+
         // A second video in the same folder keeps its own sidecar.
         this.video("Other.Movie.2020.mkv");
         sidecar("Other.Movie.2020.srt");
@@ -199,7 +210,11 @@ public class SidecarSubtitleTests
         var secondSub = sidecar("Other.Movie.2020.srt");
 
         Assert.That(SidecarSubtitles.Find(first), Is.Empty);
-        Assert.That(SidecarSubtitles.Find(second).Select(x => x.FilePath), Is.EqualTo(new[] { secondSub }));
+
+        Assert.That(SidecarSubtitles.Find(second).Select(x => x.FilePath), Is.EqualTo(new[]
+                                                                                      {
+                                                                                              secondSub
+                                                                                      }));
     }
 
     [Test]
@@ -208,6 +223,7 @@ public class SidecarSubtitleTests
         Assert.That(SidecarSubtitles.DisplayName("eng", "eng"), Is.EqualTo("English"));
         Assert.That(SidecarSubtitles.DisplayName(null, "ger"), Is.EqualTo("German"));
         Assert.That(SidecarSubtitles.DisplayName("", ""), Is.EqualTo(""));
+
         // An unknown but real language name is not a code, so it survives untouched.
         Assert.That(SidecarSubtitles.DisplayName("Français canadien", "fra"), Is.EqualTo("Français canadien"));
     }

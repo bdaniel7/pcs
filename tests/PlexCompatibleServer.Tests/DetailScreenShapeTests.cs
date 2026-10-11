@@ -12,17 +12,17 @@ using PlexCompatibleServer.Infrastructure.Media;
 namespace PlexCompatibleServer.Tests;
 
 /// <summary>
-/// Guards the two response shapes a working Plex-for-LG detail screen depends on, both read out of a
-/// capture of the real server while that client played a movie:
-///   /hubs/metadata/{id}/related -> one populated hub, type="movie", context="hub.movie.similar",
-///                                 hubIdentifier="movie.similar", key="/library/metadata/{id}/similar",
-///                                 size = number of rows, allowSync as a boolean
-///   /photo/:/transcode            -> the slot named in the url (/art/ vs /thumb/)
+///     Guards the two response shapes a working Plex-for-LG detail screen depends on, both read out of a
+///     capture of the real server while that client played a movie:
+///     /hubs/metadata/{id}/related -> one populated hub, type="movie", context="hub.movie.similar",
+///     hubIdentifier="movie.similar", key="/library/metadata/{id}/similar",
+///     size = number of rows, allowSync as a boolean
+///     /photo/:/transcode            -> the slot named in the url (/art/ vs /thumb/)
 /// </summary>
 [TestFixture]
 public class DetailScreenShapeTests
 {
-    private string artDir = "";
+    string artDir = "";
 
     [SetUp]
     public void SetUp()
@@ -34,7 +34,10 @@ public class DetailScreenShapeTests
     [TearDown]
     public void TearDown()
     {
-        if (Directory.Exists(artDir)) Directory.Delete(artDir, recursive: true);
+        if (Directory.Exists(artDir))
+        {
+            Directory.Delete(artDir, true);
+        }
     }
 
     [Test]
@@ -72,7 +75,7 @@ public class DetailScreenShapeTests
         // hubKey is a single /library/metadata/ prefix followed by the comma-joined rating keys,
         // in row order (official capture: "/library/metadata/3,644,645,729,651,94").
         Assert.That(hub.GetProperty("hubKey").GetString(),
-            Is.EqualTo("/library/metadata/" + string.Join(",", rows.Select(x => x.GetProperty("ratingKey").GetString()))));
+                    Is.EqualTo("/library/metadata/" + string.Join(",", rows.Select(x => x.GetProperty("ratingKey").GetString()))));
 
         // The movie being viewed is not its own recommendation.
         Assert.That(rows.Any(x => x.GetProperty("ratingKey").GetString() == "8"), Is.False);
@@ -81,10 +84,13 @@ public class DetailScreenShapeTests
         // dereferences the first credit/genre entry of each row without a null check.
         foreach (var row in rows)
         {
-            foreach (var section in new[] { "Role", "Director", "Writer", "Genre", "Rating" })
+            foreach (var section in new[]
+                                    {
+                                            "Role", "Director", "Writer", "Genre", "Rating"
+                                    })
             {
                 Assert.That(row.GetProperty(section).GetArrayLength(), Is.GreaterThan(0),
-                    $"row {row.GetProperty("ratingKey").GetString()} has an empty {section} list");
+                            $"row {row.GetProperty("ratingKey").GetString()} has an empty {section} list");
             }
             Assert.That(row.GetProperty("chapterSource").GetString(), Is.EqualTo("media"));
             Assert.That(row.TryGetProperty("summary", out _), Is.True);
@@ -109,13 +115,21 @@ public class DetailScreenShapeTests
     public async Task Photo_ArtUrlServesArtwork()
     {
         var art = Path.Combine(artDir, "art.jpg");
-        File.WriteAllBytes(art, new byte[] { 1, 2, 3 });
+
+        File.WriteAllBytes(art, new byte[]
+                                {
+                                        1, 2, 3
+                                });
         var poster = Path.Combine(artDir, "poster.jpg");
-        File.WriteAllBytes(poster, new byte[] { 1, 2, 3 });
+
+        File.WriteAllBytes(poster, new byte[]
+                                   {
+                                           1, 2, 3
+                                   });
         var controller = photo(buildRepo(art, poster));
 
         var result = await controller.Transcode("/library/metadata/8/art/1790948816", 1232, 693, "")
-            as PhysicalFileResult;
+                             as PhysicalFileResult;
 
         Assert.That(result, Is.Not.Null);
         Assert.That(result!.FileName, Is.EqualTo(art));
@@ -125,98 +139,165 @@ public class DetailScreenShapeTests
     public async Task Photo_ThumbUrlServesPoster()
     {
         var art = Path.Combine(artDir, "art.jpg");
-        File.WriteAllBytes(art, new byte[] { 1, 2, 3 });
+
+        File.WriteAllBytes(art, new byte[]
+                                {
+                                        1, 2, 3
+                                });
         var poster = Path.Combine(artDir, "poster.jpg");
-        File.WriteAllBytes(poster, new byte[] { 1, 2, 3 });
+
+        File.WriteAllBytes(poster, new byte[]
+                                   {
+                                           1, 2, 3
+                                   });
         var controller = photo(buildRepo(art, poster));
 
         var result = await controller.Transcode("/library/metadata/8/thumb/1790948816", 240, 360, "")
-            as PhysicalFileResult;
+                             as PhysicalFileResult;
 
         Assert.That(result, Is.Not.Null);
         Assert.That(result!.FileName, Is.EqualTo(poster));
     }
 
-    private PhotoController photo(FakeRepo repo) =>
-        new(repo, new ImageTranscoder(new MediaArtOptions { CacheDirectory = artDir },
-            NullLogger<ImageTranscoder>.Instance));
-
-    private static FakeRepo buildRepo(string art, string poster)
+    PhotoController photo(FakeRepo repo)
     {
-        var library = new MediaLibrary { Id = 1, Name = "Movies", Type = LibraryType.Movie };
+        return new PhotoController(repo, new ImageTranscoder(new MediaArtOptions
+                                                             {
+                                                                     CacheDirectory = artDir
+                                                             },
+                                                             NullLogger<ImageTranscoder>.Instance));
+    }
+
+    static FakeRepo buildRepo(string art,
+                              string poster)
+    {
+        var library = new MediaLibrary
+                      {
+                              Id = 1,
+                              Name = "Movies",
+                              Type = LibraryType.Movie
+                      };
 
         for (var id = 1; id <= 9; id++)
         {
             library.Items.Add(new MediaItem
-            {
-                Id = id,
-                LibraryId = library.Id,
-                Library = library,
-                Title = $"Movie {id}",
-                FilePath = $"/media/movie{id}.mkv",
-                ArtPath = art,
-                PosterPath = poster
-            });
+                              {
+                                      Id = id,
+                                      LibraryId = library.Id,
+                                      Library = library,
+                                      Title = $"Movie {id}",
+                                      FilePath = $"/media/movie{id}.mkv",
+                                      ArtPath = art,
+                                      PosterPath = poster
+                              });
         }
 
         return new FakeRepo(library);
     }
 
-    private static T withJsonAccept<T>(T controller) where T : ControllerBase
+    static T withJsonAccept<T>(T controller) where T : ControllerBase
     {
         var http = new DefaultHttpContext();
         http.Request.Headers.Accept = "application/json";
-        controller.ControllerContext = new ControllerContext { HttpContext = http };
+
+        controller.ControllerContext = new ControllerContext
+                                       {
+                                               HttpContext = http
+                                       };
+
         return controller;
     }
 
-    private sealed class FakeRepo : IMediaRepository
+    sealed class FakeRepo : IMediaRepository
     {
-        private readonly List<MediaLibrary> libraries;
+        readonly List<MediaLibrary> libraries;
 
         public FakeRepo(params MediaLibrary[] libraries) => this.libraries = libraries.ToList();
 
         public Task<IReadOnlyList<MediaLibrary>> GetLibrariesAsync(CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaLibrary>>(libraries);
+        {
+            return Task.FromResult<IReadOnlyList<MediaLibrary>>(libraries);
+        }
 
-        public Task<MediaLibrary?> GetLibraryAsync(int id, CancellationToken ct)
-            => Task.FromResult(libraries.FirstOrDefault(x => x.Id == id));
+        public Task<MediaLibrary?> GetLibraryAsync(int id,
+                                                   CancellationToken ct)
+        {
+            return Task.FromResult(libraries.FirstOrDefault(x => x.Id == id));
+        }
 
-        public Task<IReadOnlyList<MediaItem>> GetItemsAsync(int libraryId, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaItem>>(
-                libraries.Where(x => x.Id == libraryId).SelectMany(x => x.Items).ToList());
+        public Task<IReadOnlyList<MediaItem>> GetItemsAsync(int libraryId,
+                                                            CancellationToken ct)
+        {
+            return Task.FromResult<IReadOnlyList<MediaItem>>(
+                                                             libraries.Where(x => x.Id == libraryId).SelectMany(x => x.Items).ToList());
+        }
 
-        public Task<MediaItem?> GetItemAsync(int id, CancellationToken ct)
-            => Task.FromResult(libraries.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == id));
+        public Task<MediaItem?> GetItemAsync(int id,
+                                             CancellationToken ct)
+        {
+            return Task.FromResult(libraries.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == id));
+        }
 
-        public Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaItem>>(
-                libraries.Where(x => libraryIds.Contains(x.Id))
-                    .OrderBy(x => x.Id)
-                    .SelectMany(x => x.Items)
-                    .ToList());
+        public Task<IReadOnlyList<MediaItem>> GetItemsByLibrariesAsync(IReadOnlyList<int> libraryIds,
+                                                                       CancellationToken ct)
+        {
+            return Task.FromResult<IReadOnlyList<MediaItem>>(
+                                                             libraries.Where(x => libraryIds.Contains(x.Id))
+                                                                      .OrderBy(x => x.Id)
+                                                                      .SelectMany(x => x.Items)
+                                                                      .ToList());
+        }
 
 
-        public Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries, CancellationToken ct)
-            => Task.CompletedTask;
+        public Task SynchronizeAsync(IReadOnlyList<MediaLibrary> libraries,
+                                     CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
 
-        public Task SaveProgressAsync(int id, long timeMs, long durationMs, DateTimeOffset viewedAt, CancellationToken ct)
-            => Task.CompletedTask;
+        public Task SaveProgressAsync(int id,
+                                      long timeMs,
+                                      long durationMs,
+                                      DateTimeOffset viewedAt,
+                                      CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
 
-        public Task MarkWatchedAsync(int id, DateTimeOffset viewedAt, CancellationToken ct)
-            => Task.CompletedTask;
+        public Task MarkWatchedAsync(int id,
+                                     DateTimeOffset viewedAt,
+                                     CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
 
-        public Task ClearProgressAsync(int id, CancellationToken ct)
-            => Task.CompletedTask;
+        public Task ClearProgressAsync(int id,
+                                       CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
 
-        public Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId, int limit, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MediaItem>>([]);
+        public Task<IReadOnlyList<MediaItem>> GetInProgressAsync(int? libraryId,
+                                                                 int limit,
+                                                                 CancellationToken ct)
+        {
+            return Task.FromResult<IReadOnlyList<MediaItem>>([]);
+        }
 
-        public Task DismissFromContinueWatchingAsync(int id, CancellationToken ct)
-            => Task.CompletedTask;
+        public Task DismissFromContinueWatchingAsync(int id,
+                                                     CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
 
-        public Task SaveOfficialArtworkAsync(int id, string? posterPath, string? artPath, string? parentPosterPath,
-                                             string? grandparentPosterPath, CancellationToken ct)
-            => Task.CompletedTask;
+        public Task SaveOfficialArtworkAsync(int id,
+                                             string? posterPath,
+                                             string? artPath,
+                                             string? parentPosterPath,
+                                             string? grandparentPosterPath,
+                                             CancellationToken ct)
+        {
+            return Task.CompletedTask;
+        }
     }
 }

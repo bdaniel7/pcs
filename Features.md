@@ -19,14 +19,13 @@ verified against the official Plex app on LG webOS (OLED48C41LA, Plex for LG 5.9
 
 ## Plex API Surface
 
-Implements the HTTP endpoints the Plex client workflow needs, answering in both XML and JSON
-(content negotiation):
+Implements the HTTP endpoints the Plex client workflow needs, answering in both XML and JSON (content negotiation):
 
 - **Discovery** — `/`, `/identity`, `/media/providers` (search/metadata/image-transcoder feature
   declarations), `/status/sessions`, `/player/proxy/poll`, websocket notifications stub.
 - **Libraries** — section listing, item listing with paging/sort/filter (`/library/sections/{id}/all`),
-  `recentlyAdded`, detail (`/library/metadata/{id}`), season/episode children, and the image slots
-  (`thumb`, `art`, `squareArt`, `clearLogo`, plus `parentThumb`/`grandparentThumb` for episode
+  `recentlyAdded`, detail (`/library/metadata/{id}`), season/episode children, and the image slots (`thumb`, `art`,
+  `squareArt`, `clearLogo`, plus `parentThumb`/`grandparentThumb` for episode
   rows, with cache busters).
 - **Hubs** — home hubs, section hubs, promoted hub, and related-items hub, all enriched with real
   cached metadata (official titles, episode hierarchy). *Continue Watching* lists items with saved
@@ -34,21 +33,21 @@ Implements the HTTP endpoints the Plex client workflow needs, answering in both 
   sidecar cache, and a wrong next-episode is worse than none).
 - **Play queues** — created and served in memory (`POST|PUT|GET /playQueues`).
 - **Artwork resolver** — `/photo/:/transcode` returns the correct slot (poster vs. wide backdrop
-  vs. season/show poster) per request, scaled to the exact `width`/`height` the client asked for
-  (lanczos, aspect preserved, cached by source+size so repaints are disk hits — the TV never has
+  vs. season/show poster) per request, scaled to the exact `width`/`height` the client asked for (lanczos, aspect
+  preserved, cached by source+size so repaints are disk hits — the TV never has
   to downscale a full-resolution original, which reads as grain), and never 404s; a 1×1
   placeholder stands in when no artwork exists.
 - **Server identity** — `/` and `/identity` expose the configured name, machine identifier and a
-  Plex-compatible version string; `X-Plex-Token` arriving at `/identity` is captured in memory
-  (never persisted) for later metadata lookups.
+  Plex-compatible version string; `X-Plex-Token` arriving at `/identity` is captured in memory (never persisted) for
+  later metadata lookups.
 
 ## Metadata Enrichment (plex.tv discover)
 
 - **Movies** — filename-based title/year search against plex.tv discover, best-candidate selection,
   detail enrichment (summary, genres, cast/crew, ratings, content rating), and a translated-title
   fallback.
-- **TV episodes** — filenames are parsed for season/episode numbers and episode titles
-  (`TvEpisodeName`); the matching show is located on plex.tv and the real episode record is fetched
+- **TV episodes** — filenames are parsed for season/episode numbers and episode titles (`TvEpisodeName`); the matching
+  show is located on plex.tv and the real episode record is fetched
   through season → episode children walks (show title, episode title, synopsis, credits, air year).
 - **Show disambiguation** — shows that share a name (e.g. *Dark Matter* 2015 vs. 2024) are
   resolved by, in order of confidence: a year in the filename, an episode title in the filename
@@ -124,8 +123,7 @@ Implements the HTTP endpoints the Plex client workflow needs, answering in both 
 
 ## Operations & Diagnostics
 
-- **Request logging** — every request/response is logged with client identity
-  (`Diagnostics:LogRequests`).
+- **Request logging** — every request/response is logged with client identity (`Diagnostics:LogRequests`).
 - **Configuration** — server name, machine identifier, advertised version, library roots, art
   options and connection string all live in `appsettings.json`.
 - **Static caches** — metadata caches are served from `wwwroot` for easy inspection.

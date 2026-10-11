@@ -1,14 +1,15 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using PlexCompatibleServer.Core.Models;
 
 namespace PlexCompatibleServer.Api.Controllers;
 
 /// <summary>
-/// Owns the on-disk sidecar stores (scraped metadata, offline lookup cache, show bindings) and the
-/// in-memory caches derived from them. Persistence, path resolution and the precomputed fuzzy index
-/// live here; matching and HTTP concerns sit in the collaborators that consume this store.
+///     Owns the on-disk sidecar stores (scraped metadata, offline lookup cache, show bindings) and the
+///     in-memory caches derived from them. Persistence, path resolution and the precomputed fuzzy index
+///     live here; matching and HTTP concerns sit in the collaborators that consume this store.
 /// </summary>
 internal sealed class SidecarStore
 {
@@ -19,31 +20,29 @@ internal sealed class SidecarStore
     readonly object cacheLock = new();
 
     /// <summary>
-    /// Content root of the running app. Dev runs from the project directory while binaries land in
-    /// bin/ - without this, a wwwroot copy under the output directory shadows the real files that
-    /// static serving and tests read from the project directory.
+    ///     Content root of the running app. Dev runs from the project directory while binaries land in
+    ///     bin/ - without this, a wwwroot copy under the output directory shadows the real files that
+    ///     static serving and tests read from the project directory.
     /// </summary>
     internal string? ContentRoot { get; }
 
-    internal SidecarStore(string? contentRoot = null)
-    {
-        ContentRoot = contentRoot;
-    }
+    internal SidecarStore(string? contentRoot = null) => ContentRoot = contentRoot;
 
     internal static readonly JsonSerializerOptions Options = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+                                                             {
+                                                                     PropertyNameCaseInsensitive = true,
+                                                                     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 
-        // The scraped sidecar mixes value types - "year" is a JSON number while the model
-        // declares string, and numeric fields arrive as quoted strings. Deserialization used to
-        // throw on the first entry, which silently disabled the entire sidecar.
-        Converters = {
-                                                                                      new FlexibleStringConverter(),
-                                                                                      new FlexibleNumberConverter<double>(),
-                                                                                      new FlexibleNumberConverter<int>()
-                                                                                  }
-    };
+                                                                     // The scraped sidecar mixes value types - "year" is a JSON number while the model
+                                                                     // declares string, and numeric fields arrive as quoted strings. Deserialization used to
+                                                                     // throw on the first entry, which silently disabled the entire sidecar.
+                                                                     Converters =
+                                                                     {
+                                                                             new FlexibleStringConverter(),
+                                                                             new FlexibleNumberConverter<double>(),
+                                                                             new FlexibleNumberConverter<int>()
+                                                                     }
+                                                             };
 
     ConcurrentDictionary<string, SidecarItem>? cache;
     int cacheVersion;
@@ -54,28 +53,38 @@ internal sealed class SidecarStore
 
     internal SidecarItem? Get(string key)
     {
-        var cache = this.cache;
+        var _cache = this.cache;
 
-        if (cache is null)
+        if (_cache is null)
         {
             var path = resolveSidecarPath();
 
             var loaded = path is not null
-                             ? JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(File.ReadAllText(path), Options)
-                             : null;
-            cache = new ConcurrentDictionary<string, SidecarItem>(loaded ?? new(), StringComparer.Ordinal);
-            foreach (var kv in loadLookupCache()) cache[kv.Key] = kv.Value;
-            this.cache = cache;
+                                 ? JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(File.ReadAllText(path), Options)
+                                 : null;
+            _cache = new ConcurrentDictionary<string, SidecarItem>(loaded ?? new(), StringComparer.Ordinal);
+
+            foreach (var kv in loadLookupCache())
+            {
+                _cache[kv.Key] = kv.Value;
+            }
+            this.cache = _cache;
             cacheVersion++;
         }
 
-        if (cache!.TryGetValue(key, out var v)) return v;
+        if (_cache.TryGetValue(key, out var v))
+        {
+            return v;
+        }
 
         if (!string.IsNullOrEmpty(key))
         {
-            foreach (var kv in cache)
+            foreach (var kv in _cache)
             {
-                if (kv.Key.Equals(key, StringComparison.OrdinalIgnoreCase)) return kv.Value;
+                if (kv.Key.Equals(key, StringComparison.OrdinalIgnoreCase))
+                {
+                    return kv.Value;
+                }
             }
         }
 
@@ -84,34 +93,52 @@ internal sealed class SidecarStore
 
     internal SidecarItem? GetFuzzy(string filename)
     {
-        var cache = this.cache;
+        var _cache = this.cache;
 
-        if (cache is null || string.IsNullOrEmpty(filename)) return null;
+        if (_cache is null || string.IsNullOrEmpty(filename))
+        {
+            return null;
+        }
 
-        var index = getFuzzyIndex(cache);
+        var index = getFuzzyIndex(_cache);
         var fn = filename.ToLowerInvariant();
 
         // Exact stem hit is the common case (the file names its own sidecar): answer with one probe
         // before touching the precomputed entry list.
-        if (index.ByStem.TryGetValue(fn, out var exact)) return exact;
+        if (index.ByStem.TryGetValue(fn, out var exact))
+        {
+            return exact;
+        }
 
         var fnorm = normalizeFuzzy(fn);
 
         foreach (var entry in index.Entries)
         {
-            if (entry.Stem.Length == 0) continue;
+            if (entry.Stem.Length == 0)
+            {
+                continue;
+            }
 
             if (entry.TitleNorm.Length > 0 &&
-                (fnorm.Contains(entry.TitleNorm) || entry.TitleNorm.Contains(fnorm))) return entry.Record;
+                (fnorm.Contains(entry.TitleNorm) || entry.TitleNorm.Contains(fnorm)))
+            {
+                return entry.Record;
+            }
 
-            if (fn.Contains(entry.Stem) || entry.Stem.Contains(fn)) return entry.Record;
+            if (fn.Contains(entry.Stem) || entry.Stem.Contains(fn))
+            {
+                return entry.Record;
+            }
 
             if (fn.Length > 12 && entry.Stem.Length > 12)
             {
                 var tfn = fn.Length >= 20 ? fn[..20] : fn;
                 var tstem = entry.Stem.Length >= 20 ? entry.Stem[..20] : entry.Stem;
 
-                if (tfn.Contains(tstem) || tstem.Contains(tfn)) return entry.Record;
+                if (tfn.Contains(tstem) || tstem.Contains(tfn))
+                {
+                    return entry.Record;
+                }
             }
         }
 
@@ -119,36 +146,45 @@ internal sealed class SidecarStore
     }
 
     /// <summary>
-    /// Returns the precomputed fuzzy index for the current cache. Rebuilding it costs one pass over
-    /// the sidecar; doing so per lookup would re-normalize every title on every row of a library
-    /// page (an O(n^2) walk). The index is reused until the cache is loaded or a record is written.
+    ///     Returns the precomputed fuzzy index for the current cache. Rebuilding it costs one pass over
+    ///     the sidecar; doing so per lookup would re-normalize every title on every row of a library
+    ///     page (an O(n^2) walk). The index is reused until the cache is loaded or a record is written.
     /// </summary>
     FuzzyIndex getFuzzyIndex(ConcurrentDictionary<string, SidecarItem> cache)
     {
         var index = fuzzyIndex;
+
         if (index is not null && fuzzyIndexVersion == cacheVersion && ReferenceEquals(index.Cache, cache))
+        {
             return index;
+        }
 
         lock (cacheLock)
         {
             index = fuzzyIndex;
+
             if (index is not null && fuzzyIndexVersion == cacheVersion && ReferenceEquals(index.Cache, cache))
+            {
                 return index;
+            }
 
             index = FuzzyIndex.Build(cache);
             fuzzyIndex = index;
             fuzzyIndexVersion = cacheVersion;
+
             return index;
         }
     }
 
-    static string normalizeFuzzy(string value) =>
-        System.Text.RegularExpressions.Regex.Replace(value, "[^a-z0-9]+", "");
+    static string normalizeFuzzy(string value)
+    {
+        return Regex.Replace(value, "[^a-z0-9]+", "");
+    }
 
     /// <summary>
-    /// Per-record lookup data built once per cache revision: the lower-cased file stem (for the raw
-    /// containment checks) and the stripped-alphanumeric title (so the query only pays for one
-    /// normalization, not one per record).
+    ///     Per-record lookup data built once per cache revision: the lower-cased file stem (for the raw
+    ///     containment checks) and the stripped-alphanumeric title (so the query only pays for one
+    ///     normalization, not one per record).
     /// </summary>
     sealed class FuzzyIndex
     {
@@ -162,7 +198,9 @@ internal sealed class SidecarStore
         }
 
         public ConcurrentDictionary<string, SidecarItem> Cache { get; }
+
         public Dictionary<string, SidecarItem> ByStem { get; }
+
         public Entry[] Entries { get; }
 
         public static FuzzyIndex Build(ConcurrentDictionary<string, SidecarItem> cache)
@@ -177,7 +215,10 @@ internal sealed class SidecarStore
                 var titleNorm = normalizeFuzzy((pair.Value.Title ?? string.Empty).ToLowerInvariant());
                 entries[i++] = new Entry(stem, titleNorm, pair.Value);
 
-                if (stem.Length > 0 && !byStem.ContainsKey(stem)) byStem[stem] = pair.Value;
+                if (stem.Length > 0 && !byStem.ContainsKey(stem))
+                {
+                    byStem[stem] = pair.Value;
+                }
             }
 
             return new FuzzyIndex(cache, byStem, entries);
@@ -196,26 +237,34 @@ internal sealed class SidecarStore
         }
         var path = Path.Combine(AppContext.BaseDirectory, "wwwroot", "plex-metadata.json");
 
-        if (File.Exists(path)) return path;
+        if (File.Exists(path))
+        {
+            return path;
+        }
         path = Path.Combine(AppContext.BaseDirectory, "..", "wwwroot", "plex-metadata.json");
 
-        if (File.Exists(path)) return path;
+        if (File.Exists(path))
+        {
+            return path;
+        }
 
         return File.Exists(SIDECAR_PATH) ? Path.GetFullPath(SIDECAR_PATH) : null;
     }
 
-    string preferredSidecarPath() =>
-        ContentRoot is not null
-            ? Path.Combine(ContentRoot, "wwwroot", "plex-metadata.json")
-            : Path.Combine(AppContext.BaseDirectory, "wwwroot", "plex-metadata.json");
+    string preferredSidecarPath()
+    {
+        return ContentRoot is not null
+                       ? Path.Combine(ContentRoot, "wwwroot", "plex-metadata.json")
+                       : Path.Combine(AppContext.BaseDirectory, "wwwroot", "plex-metadata.json");
+    }
 
     string lookupCachePath()
     {
         var sidecar = resolveSidecarPath();
 
         var dir = sidecar is not null
-                      ? Path.GetDirectoryName(sidecar)!
-                      : Path.GetDirectoryName(preferredSidecarPath())!;
+                          ? Path.GetDirectoryName(sidecar)!
+                          : Path.GetDirectoryName(preferredSidecarPath())!;
 
         return Path.Combine(dir, LOOKUP_CACHE_FILE_NAME);
     }
@@ -226,7 +275,10 @@ internal sealed class SidecarStore
         {
             var path = lookupCachePath();
 
-            if (!File.Exists(path)) return new Dictionary<string, SidecarItem>();
+            if (!File.Exists(path))
+            {
+                return new Dictionary<string, SidecarItem>();
+            }
 
             return JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(File.ReadAllText(path), Options)
                 ?? new Dictionary<string, SidecarItem>();
@@ -257,6 +309,7 @@ internal sealed class SidecarStore
             {
                 // A failed cache write must not fail the response; the lookup still serves this request.
             }
+
             if (cache is not null)
             {
                 cache[key] = rec;
@@ -271,7 +324,10 @@ internal sealed class SidecarStore
         {
             var path = Path.Combine(Path.GetDirectoryName(lookupCachePath())!, SHOW_BINDINGS_FILE_NAME);
 
-            if (!File.Exists(path)) return new Dictionary<string, SidecarItem>();
+            if (!File.Exists(path))
+            {
+                return new Dictionary<string, SidecarItem>();
+            }
 
             return JsonSerializer.Deserialize<Dictionary<string, SidecarItem>>(
                                                                                File.ReadAllText(path), Options) ?? new Dictionary<string, SidecarItem>();
@@ -316,8 +372,8 @@ internal sealed class SidecarStore
     }
 
     /// <summary>
-    /// Merges one record into plex-metadata.json (fresh read, indented, atomic) and the
-    /// in-memory cache.
+    ///     Merges one record into plex-metadata.json (fresh read, indented, atomic) and the
+    ///     in-memory cache.
     /// </summary>
     internal void UpsertSidecar(string key,
                                 SidecarItem rec)
@@ -336,10 +392,15 @@ internal sealed class SidecarStore
                                                                                    File.ReadAllText(path), Options) ?? dict;
             }
             dict[key] = rec;
-            var writeOptions = new JsonSerializerOptions(Options) { WriteIndented = true };
+
+            var writeOptions = new JsonSerializerOptions(Options)
+                               {
+                                       WriteIndented = true
+                               };
             var tmp = path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(dict, writeOptions));
             File.Move(tmp, path, true);
+
             if (cache is not null)
             {
                 cache[key] = rec;

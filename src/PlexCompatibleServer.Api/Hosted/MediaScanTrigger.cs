@@ -10,10 +10,16 @@ public enum MediaScanReason
 
 public sealed class MediaScanTrigger
 {
-    private readonly Channel<MediaScanReason> requests =
-        Channel.CreateUnbounded<MediaScanReason>(new UnboundedChannelOptions { SingleReader = true });
+    readonly Channel<MediaScanReason> requests =
+            Channel.CreateUnbounded<MediaScanReason>(new UnboundedChannelOptions
+                                                     {
+                                                             SingleReader = true
+                                                     });
 
     public ChannelReader<MediaScanReason> Requests => requests.Reader;
 
-    public bool Request(MediaScanReason reason) => requests.Writer.TryWrite(reason);
+    public void Request(MediaScanReason reason)
+    {
+        requests.Writer.TryWrite(reason);
+    }
 }

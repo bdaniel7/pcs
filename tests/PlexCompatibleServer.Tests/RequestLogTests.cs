@@ -7,12 +7,13 @@ namespace PlexCompatibleServer.Tests;
 [TestFixture]
 public class RequestLogTests
 {
-    private static DefaultHttpContext context(string query = "")
+    static DefaultHttpContext context(string query = "")
     {
         var ctx = new DefaultHttpContext();
         ctx.Request.Method = "GET";
         ctx.Request.Path = "/video";
         ctx.Request.QueryString = new QueryString(query);
+
         return ctx;
     }
 

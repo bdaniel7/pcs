@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Xml.Serialization;
 
@@ -10,22 +11,35 @@ public static class PlexXml
         var serializer = new XmlSerializer(typeof(T));
         var ns = new XmlSerializerNamespaces();
         ns.Add("", "");
-        using var sw = new Utf8StringWriter(System.Globalization.CultureInfo.InvariantCulture);
+        using var sw = new Utf8StringWriter(CultureInfo.InvariantCulture);
         serializer.Serialize(sw, value, ns);
+
         return sw.ToString();
     }
 
     public static string PlatformName()
     {
-        if (OperatingSystem.IsWindows()) return "Windows";
-        if (OperatingSystem.IsLinux()) return "Linux";
-        if (OperatingSystem.IsMacOS()) return "macOS";
+        if (OperatingSystem.IsWindows())
+        {
+            return "Windows";
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            return "Linux";
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return "macOS";
+        }
+
         return "Unknown";
     }
 
-    private sealed class Utf8StringWriter : StringWriter
+    sealed class Utf8StringWriter : StringWriter
     {
-        public Utf8StringWriter(System.Globalization.CultureInfo culture) : base(culture) { }
+        public Utf8StringWriter(CultureInfo culture) : base(culture) { }
 
         public override Encoding Encoding => Encoding.UTF8;
     }

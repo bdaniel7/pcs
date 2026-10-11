@@ -12,17 +12,17 @@ using PlexCompatibleServer.Infrastructure.Media;
 namespace PlexCompatibleServer.Tests;
 
 /// <summary>
-/// The two halves of the subtitle path: what the library publishes for a video with an external
-/// .srt next to it, and what the subtitle endpoints answer when the client fetches that track.
-/// The failure mode being guarded is a movie that plays with no subtitle at all, or errors out
-/// on open, because the track was published with an id the delivery side cannot resolve.
+///     The two halves of the subtitle path: what the library publishes for a video with an external
+///     .srt next to it, and what the subtitle endpoints answer when the client fetches that track.
+///     The failure mode being guarded is a movie that plays with no subtitle at all, or errors out
+///     on open, because the track was published with an id the delivery side cannot resolve.
 /// </summary>
 [TestFixture]
 public class SubtitleTrackTests
 {
-    private const string VIDEO_NAME = "Emily.The.Criminal.2022.1080p.WEBRip.x264.AAC5.1-[YTS.MX].mp4";
+    const string VIDEO_NAME = "Emily.The.Criminal.2022.1080p.WEBRip.x264.AAC5.1-[YTS.MX].mp4";
 
-    private string dir = "";
+    string dir = "";
 
     [SetUp]
     public void SetUp()
@@ -34,62 +34,85 @@ public class SubtitleTrackTests
     [TearDown]
     public void TearDown()
     {
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        if (Directory.Exists(dir))
+        {
+            Directory.Delete(dir, true);
+        }
     }
 
-    private MediaItem buildItem(params MediaStreamInfo[] streams)
+    MediaItem buildItem(params MediaStreamInfo[] streams)
     {
         var videoPath = Path.Combine(dir, VIDEO_NAME);
         File.WriteAllBytes(videoPath, [0x00]);
 
-        var library = new MediaLibrary { Id = 1, Name = "Movies", Type = LibraryType.Movie };
+        var library = new MediaLibrary
+                      {
+                              Id = 1,
+                              Name = "Movies",
+                              Type = LibraryType.Movie
+                      };
+
         var item = new MediaItem
-        {
-            Id = 5,
-            LibraryId = library.Id,
-            Library = library,
-            Title = Path.GetFileNameWithoutExtension(VIDEO_NAME),
-            FilePath = videoPath,
-            FileSize = 1,
-            Width = 1920,
-            Height = 1080
-        };
+                   {
+                           Id = 5,
+                           LibraryId = library.Id,
+                           Library = library,
+                           Title = Path.GetFileNameWithoutExtension(VIDEO_NAME),
+                           FilePath = videoPath,
+                           FileSize = 1,
+                           Width = 1920,
+                           Height = 1080
+                   };
         library.Items.Add(item);
 
-        if (streams.Length > 0) item.StreamsJson = JsonSerializer.Serialize(streams.ToList());
+        if (streams.Length > 0)
+        {
+            item.StreamsJson = JsonSerializer.Serialize(streams.ToList());
+        }
+
         return item;
     }
 
-    private static MediaStreamInfo videoStream() => new()
+    static MediaStreamInfo videoStream()
     {
-        StreamType = 1,
-        Codec = "h264",
-        Width = 1920,
-        Height = 1080,
-        Location = "direct"
-    };
+        return new MediaStreamInfo
+               {
+                       StreamType = 1,
+                       Codec = "h264",
+                       Width = 1920,
+                       Height = 1080,
+                       Location = "direct"
+               };
+    }
 
-    private static MediaStreamInfo audioStream() => new()
+    static MediaStreamInfo audioStream()
     {
-        StreamType = 2,
-        Codec = "aac",
-        Channels = 6,
-        Location = "direct"
-    };
+        return new MediaStreamInfo
+               {
+                       StreamType = 2,
+                       Codec = "aac",
+                       Channels = 6,
+                       Location = "direct"
+               };
+    }
 
-    private static MediaStreamInfo embeddedSubtitle() => new()
+    static MediaStreamInfo embeddedSubtitle()
     {
-        StreamType = 3,
-        Codec = "subrip",
-        Language = "English",
-        LanguageCode = "eng",
-        Location = "direct"
-    };
+        return new MediaStreamInfo
+               {
+                       StreamType = 3,
+                       Codec = "subrip",
+                       Language = "English",
+                       LanguageCode = "eng",
+                       Location = "direct"
+               };
+    }
 
-    private string sidecar(string suffix)
+    string sidecar(string suffix)
     {
         var path = Path.Combine(dir, Path.GetFileNameWithoutExtension(VIDEO_NAME) + suffix + ".srt");
         File.WriteAllText(path, "1\n00:00:01,000 --> 00:00:02,000\nhello\n");
+
         return path;
     }
 
@@ -111,6 +134,7 @@ public class SubtitleTrackTests
         Assert.That(track.Language, Is.EqualTo("English"));
         Assert.That(track.LanguageCode, Is.EqualTo("eng"));
         Assert.That(track.LanguageTag, Is.EqualTo("en"));
+
         // The codec has to be the spelling real Plex publishes and clients whitelist: an
         // ffprobe-style "subrip" is what leaves the track selectable but never fetched.
         Assert.That(track.Codec, Is.EqualTo("srt"));
@@ -127,11 +151,13 @@ public class SubtitleTrackTests
         var part = VideoMapper.ToVideo(item).Media[0].Parts[0];
 
         Assert.That(part.Streams, Has.Count.EqualTo(4));
+
         // Text inside the container is fetched like an external file: it carries a key at the
         // position its id encodes, and the server extracts it to SRT on demand.
         Assert.That(part.Streams[2].Location, Is.EqualTo("sidecar-subs"));
         Assert.That(part.Streams[2].Key, Is.EqualTo("/library/streams/5002"));
         Assert.That(part.Streams[2].Codec, Is.EqualTo("srt"));
+
         // The sidecar track follows, at the position its id encodes.
         Assert.That(part.Streams[3].Location, Is.EqualTo("sidecar-subs"));
         Assert.That(part.Streams[3].Key, Is.EqualTo("/library/streams/5003"));
@@ -141,13 +167,13 @@ public class SubtitleTrackTests
     public void BitmapSubtitleStaysUnfetchableInsideTheContainer()
     {
         var item = buildItem(videoStream(), audioStream(), new MediaStreamInfo
-        {
-            StreamType = 3,
-            Codec = "hdmv_pgs_subtitle",
-            Language = "German",
-            LanguageCode = "ger",
-            Location = "direct"
-        });
+                                                           {
+                                                                   StreamType = 3,
+                                                                   Codec = "hdmv_pgs_subtitle",
+                                                                   Language = "German",
+                                                                   LanguageCode = "ger",
+                                                                   Location = "direct"
+                                                           });
 
         var part = VideoMapper.ToVideo(item).Media[0].Parts[0];
 
@@ -155,6 +181,7 @@ public class SubtitleTrackTests
         Assert.That(track.Location, Is.EqualTo("direct"));
         Assert.That(track.Key, Is.Empty);
         Assert.That(track.Codec, Is.EqualTo("hdmv_pgs_subtitle"));
+
         // A raw code in the menu is still better than dropping the track, and "ger" would be
         // shown as "German" once the language table is consulted.
         Assert.That(track.Language, Is.EqualTo("German"));
@@ -169,12 +196,12 @@ public class SubtitleTrackTests
         var streams = VideoMapper.ToVideo(item).Media[0].Parts[0].Streams;
 
         Assert.Multiple(() =>
-        {
-            Assert.That(streams[0].Selected, Is.EqualTo("1"), "video");
-            Assert.That(streams[1].Selected, Is.EqualTo("1"), "audio");
-            Assert.That(streams[2].Selected, Is.Empty, "embedded subtitle");
-            Assert.That(streams[3].Selected, Is.Empty, "sidecar subtitle");
-        });
+                        {
+                            Assert.That(streams[0].Selected, Is.EqualTo("1"), "video");
+                            Assert.That(streams[1].Selected, Is.EqualTo("1"), "audio");
+                            Assert.That(streams[2].Selected, Is.Empty, "embedded subtitle");
+                            Assert.That(streams[3].Selected, Is.Empty, "sidecar subtitle");
+                        });
     }
 
     [Test]
@@ -268,30 +295,36 @@ public class SubtitleTrackTests
     {
         var item = buildItem(videoStream(), audioStream(), embeddedSubtitle());
         sidecar(".en");
+
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore())
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                         {
+                                 ControllerContext = new ControllerContext
+                                                     {
+                                                             HttpContext = new DefaultHttpContext()
+                                                     }
+                         };
 
         var result = await controller.Decision("/library/metadata/5", subtitleStreamId: 5002)
-            as ContentResult;
+                             as ContentResult;
 
         Assert.That(result, Is.Not.Null);
+
         var selected = Regex.Matches(result!.Content ?? "", "<Stream\\s[^>]*/>")
-            .Cast<Match>()
-            .ToDictionary(
-                m => Regex.Match(m.Value, "id=\"([^\"]+)\"").Groups[1].Value,
-                m => Regex.Match(m.Value, "selected=\"([^\"]*)\"").Groups[1].Value);
+                            .Cast<Match>()
+                            .ToDictionary(
+                                          m => Regex.Match(m.Value, "id=\"([^\"]+)\"").Groups[1].Value,
+                                          m => Regex.Match(m.Value, "selected=\"([^\"]*)\"").Groups[1].Value);
 
         Assert.Multiple(() =>
-        {
-            Assert.That(selected["5002"], Is.EqualTo("1"), "the track the client chose");
-            // The other subtitle must not come back selected: that is a fetch the client never
-            // asked for, and a track it cannot load turns into a burn request.
-            Assert.That(selected["5003"], Is.EqualTo(""), "the subtitle nobody picked");
-            Assert.That(selected["5000"], Is.EqualTo("1"), "video");
-            Assert.That(selected["5001"], Is.EqualTo("1"), "audio");
-        });
+                        {
+                            Assert.That(selected["5002"], Is.EqualTo("1"), "the track the client chose");
+
+                            // The other subtitle must not come back selected: that is a fetch the client never
+                            // asked for, and a track it cannot load turns into a burn request.
+                            Assert.That(selected["5003"], Is.EqualTo(""), "the subtitle nobody picked");
+                            Assert.That(selected["5000"], Is.EqualTo("1"), "video");
+                            Assert.That(selected["5001"], Is.EqualTo("1"), "audio");
+                        });
     }
 
     [Test]
@@ -300,21 +333,26 @@ public class SubtitleTrackTests
         var item = buildItem(videoStream(), audioStream(), embeddedSubtitle());
         sidecar(".en");
         var store = new StreamSelectionStore();
+
         var controller = new VideoController(new FakePlayback(item), store)
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                         {
+                                 ControllerContext = new ControllerContext
+                                                     {
+                                                             HttpContext = new DefaultHttpContext()
+                                                     }
+                         };
 
         var put = await controller.SetStreamSelection(5, subtitleStreamId: 5003);
 
         Assert.That(put, Is.InstanceOf<ContentResult>());
         var streams = VideoMapper.ToVideo(item, selections: store).Media[0].Parts[0].Streams;
+
         Assert.Multiple(() =>
-        {
-            Assert.That(streams[3].Selected, Is.EqualTo("1"), "the track the viewer picked");
-            Assert.That(streams[2].Selected, Is.EqualTo(""), "the subtitle they did not");
-            Assert.That(streams[1].Selected, Is.EqualTo("1"), "audio still the default");
-        });
+                        {
+                            Assert.That(streams[3].Selected, Is.EqualTo("1"), "the track the viewer picked");
+                            Assert.That(streams[2].Selected, Is.EqualTo(""), "the subtitle they did not");
+                            Assert.That(streams[1].Selected, Is.EqualTo("1"), "audio still the default");
+                        });
     }
 
     [Test]
@@ -323,17 +361,22 @@ public class SubtitleTrackTests
         var item = buildItem(videoStream(), audioStream(), embeddedSubtitle());
         sidecar(".en");
         var store = new StreamSelectionStore();
+
         var controller = new VideoController(new FakePlayback(item), store)
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                         {
+                                 ControllerContext = new ControllerContext
+                                                     {
+                                                             HttpContext = new DefaultHttpContext()
+                                                     }
+                         };
 
         await controller.SetStreamSelection(5, subtitleStreamId: 5003);
         await controller.SetStreamSelection(5, subtitleStreamId: 0);
 
         var streams = VideoMapper.ToVideo(item, selections: store).Media[0].Parts[0].Streams;
+
         Assert.That(streams.Where(s => s.StreamType == 3).Select(s => s.Selected),
-            Has.All.EqualTo(""));
+                    Has.All.EqualTo(""));
     }
 
     [Test]
@@ -341,13 +384,17 @@ public class SubtitleTrackTests
     {
         var item = buildItem(videoStream(), audioStream());
         var store = new StreamSelectionStore();
+
         var controller = new VideoController(new FakePlayback(item), store)
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                         {
+                                 ControllerContext = new ControllerContext
+                                                     {
+                                                             HttpContext = new DefaultHttpContext()
+                                                     }
+                         };
 
         // 5002 would be a subtitle id, offered as the audio track.
-        var put = await controller.SetStreamSelection(5, audioStreamId: 5002) as ContentResult;
+        var put = await controller.SetStreamSelection(5, 5002) as ContentResult;
 
         Assert.That(put, Is.Not.Null);
         Assert.That(put!.StatusCode, Is.EqualTo(400));
@@ -359,10 +406,14 @@ public class SubtitleTrackTests
     {
         var item = buildItem(videoStream(), audioStream());
         var store = new StreamSelectionStore();
+
         var controller = new VideoController(new FakePlayback(item), store)
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                         {
+                                 ControllerContext = new ControllerContext
+                                                     {
+                                                             HttpContext = new DefaultHttpContext()
+                                                     }
+                         };
 
         var put = await controller.SetStreamSelection(999001, subtitleStreamId: 1) as ContentResult;
 
@@ -376,14 +427,19 @@ public class SubtitleTrackTests
         var item = buildItem(videoStream(), audioStream());
         var sub = sidecar(".en");
         var store = new StreamSelectionStore();
+
         var controller = new VideoController(new FakePlayback(item), store)
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                         {
+                                 ControllerContext = new ControllerContext
+                                                     {
+                                                             HttpContext = new DefaultHttpContext()
+                                                     }
+                         };
 
         await controller.SetStreamSelection(5, subtitleStreamId: 5002);
+
         var result = await controller.SubtitleTranscodeStart("/library/metadata/5", CancellationToken.None)
-            as FileStreamResult;
+                             as FileStreamResult;
 
         Assert.That(result, Is.Not.Null);
         Assert.That(result!.ContentType, Is.EqualTo("text/plain"));
@@ -396,13 +452,17 @@ public class SubtitleTrackTests
     {
         var item = buildItem(videoStream(), audioStream());
         sidecar(".en");
+
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore())
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                         {
+                                 ControllerContext = new ControllerContext
+                                                     {
+                                                             HttpContext = new DefaultHttpContext()
+                                                     }
+                         };
 
         var result = await controller.SubtitleTranscodeStart("/library/metadata/5", CancellationToken.None)
-            as ContentResult;
+                             as ContentResult;
 
         // The client only calls this once it has picked something, but an unanswered pick must
         // degrade to "no subtitle" rather than an error the playback surfaces.
@@ -415,21 +475,28 @@ public class SubtitleTrackTests
     public async Task SubtitleTranscodeStart_ForAnUnknownPathIsNotFound()
     {
         var item = buildItem(videoStream(), audioStream());
+
         var controller = new VideoController(new FakePlayback(item), new StreamSelectionStore())
-        {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-        };
+                         {
+                                 ControllerContext = new ControllerContext
+                                                     {
+                                                             HttpContext = new DefaultHttpContext()
+                                                     }
+                         };
 
         var result = await controller.SubtitleTranscodeStart("/library/metadata/999", CancellationToken.None)
-            as ContentResult;
+                             as ContentResult;
 
         Assert.That(result, Is.Not.Null);
         Assert.That(result!.StatusCode, Is.EqualTo(404));
     }
 
-    private sealed class FakePlayback(MediaItem item) : IPlaybackService
+    sealed class FakePlayback(MediaItem item) : IPlaybackService
     {
-        public Task<MediaItem?> GetMediaAsync(int id, CancellationToken ct)
-            => Task.FromResult<MediaItem?>(id == item.Id ? item : null);
+        public Task<MediaItem?> GetMediaAsync(int id,
+                                              CancellationToken ct)
+        {
+            return Task.FromResult<MediaItem?>(id == item.Id ? item : null);
+        }
     }
 }

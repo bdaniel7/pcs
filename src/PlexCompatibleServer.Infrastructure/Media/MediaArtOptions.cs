@@ -1,13 +1,13 @@
 namespace PlexCompatibleServer.Infrastructure.Media;
 
 /// <summary>
-/// Controls how posters and background art are produced for media that has no sidecar image.
+///     Controls how posters and background art are produced for media that has no sidecar image.
 /// </summary>
 public sealed class MediaArtOptions
 {
     /// <summary>
-    /// Path to ffmpeg. When empty the generator probes <c>PLEX_FFMPEG</c>, the current directory,
-    /// the usual download folders and then PATH. Artwork generation is skipped when it finds none.
+    ///     Path to ffmpeg. When empty the generator probes <c>PLEX_FFMPEG</c>, the current directory,
+    ///     the usual download folders and then PATH. Artwork generation is skipped when it finds none.
     /// </summary>
     public string FfmpegPath { get; set; } = "";
 
@@ -18,8 +18,8 @@ public sealed class MediaArtOptions
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// How far into each file to grab the still from. Plex skips past the black frames that
-    /// open most encodes, so sampling at 10% of the runtime beats a fixed offset.
+    ///     How far into each file to grab the still from. Plex skips past the black frames that
+    ///     open most encodes, so sampling at 10% of the runtime beats a fixed offset.
     /// </summary>
     public double FrameSeekFraction { get; set; } = 0.1;
 
@@ -27,8 +27,8 @@ public sealed class MediaArtOptions
     public int MaxConcurrency { get; set; } = 2;
 
     public static string DefaultCacheDirectory =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "PlexCompatibleServer",
-            "thumbs");
+            Path.Combine(
+                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                         "PlexCompatibleServer",
+                         "thumbs");
 }

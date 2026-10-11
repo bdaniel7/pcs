@@ -13,19 +13,21 @@ internal sealed class FlexibleStringConverter : JsonConverter<string>
                                  JsonSerializerOptions options)
     {
         return reader.TokenType switch
-        {
-            JsonTokenType.String => reader.GetString(),
-            JsonTokenType.Number or JsonTokenType.True or JsonTokenType.False =>
-                Encoding.UTF8.GetString(reader.ValueSpan),
-            JsonTokenType.Null => null,
-            _ => throw new JsonException($"Unexpected token {reader.TokenType} for string.")
-        };
+               {
+                       JsonTokenType.String => reader.GetString(),
+                       JsonTokenType.Number or JsonTokenType.True or JsonTokenType.False =>
+                               Encoding.UTF8.GetString(reader.ValueSpan),
+                       JsonTokenType.Null => null,
+                       _                  => throw new JsonException($"Unexpected token {reader.TokenType} for string.")
+               };
     }
 
     public override void Write(Utf8JsonWriter writer,
                                string value,
                                JsonSerializerOptions options)
-      => writer.WriteStringValue(value);
+    {
+        writer.WriteStringValue(value);
+    }
 }
 
 /// <summary>Reads a JSON number or its quoted form as T.</summary>
@@ -42,7 +44,10 @@ internal sealed class FlexibleNumberConverter<T> : JsonConverter<T> where T : st
             case JsonTokenType.String:
                 var s = reader.GetString();
 
-                if (string.IsNullOrWhiteSpace(s)) throw new JsonException($"Empty value for {typeof(T).Name}.");
+                if (string.IsNullOrWhiteSpace(s))
+                {
+                    throw new JsonException($"Empty value for {typeof(T).Name}.");
+                }
 
                 return T.Parse(s, CultureInfo.InvariantCulture);
             default:
@@ -53,5 +58,7 @@ internal sealed class FlexibleNumberConverter<T> : JsonConverter<T> where T : st
     public override void Write(Utf8JsonWriter writer,
                                T value,
                                JsonSerializerOptions options)
-      => writer.WriteRawValue(value.ToString(null, CultureInfo.InvariantCulture), skipInputValidation: true);
+    {
+        writer.WriteRawValue(value.ToString(null, CultureInfo.InvariantCulture), true);
+    }
 }

@@ -5,7 +5,8 @@ namespace PlexCompatibleServer.Api.Serialization;
 [XmlRoot("MediaContainer")]
 public sealed class XmlStatusContainer
 {
-    [XmlAttribute("size")] public int Size { get; set; }
+    [XmlAttribute("size")]
+    public int Size { get; set; }
 
     [XmlElement("Metadata")]
     public List<XmlStatusMetadata> Metadata { get; set; } = new();
@@ -13,7 +14,12 @@ public sealed class XmlStatusContainer
 
 public sealed class XmlStatusMetadata
 {
-    [XmlAttribute("accountID")] public int AccountId { get; set; }
-    [XmlAttribute("machineIdentifier")] public string MachineIdentifier { get; set; } = "";
-    [XmlAttribute("state")] public string State { get; set; } = "stopped";
+    [XmlAttribute("accountID")]
+    public int AccountId { get; set; }
+
+    [XmlAttribute("machineIdentifier")]
+    public string MachineIdentifier { get; set; } = "";
+
+    [XmlAttribute("state")]
+    public string State { get; set; } = "stopped";
 }

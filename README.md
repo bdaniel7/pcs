@@ -12,7 +12,7 @@ Tested from an LG TV.
 
 - On start, scans the media (TV and Movies) from configured paths.
 - Can rebuild the metadata if **media.db** is missing.
-- Can serve external or embedded subtitles. 
+- Can serve external or embedded subtitles.
 
 ## Scope
 
@@ -91,7 +91,8 @@ MP4/QuickTime). Other formats report `duration="0"`.
 ## Notes
 
 This is a compatibility implementation, not the official Plex server protocol implementation.
-LG clients can request additional endpoints depending on webOS/Plex app version. Add those endpoints based on captured requests.
+LG clients can request additional endpoints depending on webOS/Plex app version. Add those endpoints based on captured
+requests.
 
 Direct play is intentionally separated from transcoding. FFmpeg can later be added behind `ITranscodeService`.
 

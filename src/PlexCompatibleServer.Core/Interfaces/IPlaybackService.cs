@@ -4,5 +4,6 @@ namespace PlexCompatibleServer.Core.Interfaces;
 
 public interface IPlaybackService
 {
-    Task<MediaItem?> GetMediaAsync(int id, CancellationToken ct);
+    Task<MediaItem?> GetMediaAsync(int id,
+                                   CancellationToken ct);
 }

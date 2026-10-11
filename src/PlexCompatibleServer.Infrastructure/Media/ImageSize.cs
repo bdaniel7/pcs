@@ -1,15 +1,17 @@
 namespace PlexCompatibleServer.Infrastructure.Media;
 
 /// <summary>
-/// Reads pixel dimensions straight from the image header so the transcode endpoint can size its
-/// output without decoding the picture. PNG (IHDR) and JPEG (SOF0..15) cover every file the art
-/// pipeline writes or downloads; anything else - webp, truncated payloads, files that only look
-/// like images - reports false and lets the caller serve the original untouched, which is always
-/// a safe answer for an endpoint that must never 404 or mis-size.
+///     Reads pixel dimensions straight from the image header so the transcode endpoint can size its
+///     output without decoding the picture. PNG (IHDR) and JPEG (SOF0..15) cover every file the art
+///     pipeline writes or downloads; anything else - webp, truncated payloads, files that only look
+///     like images - reports false and lets the caller serve the original untouched, which is always
+///     a safe answer for an endpoint that must never 404 or mis-size.
 /// </summary>
 internal static class ImageSize
 {
-    public static bool TryGet(string path, out int width, out int height)
+    public static bool TryGet(string path,
+                              out int width,
+                              out int height)
     {
         width = 0;
         height = 0;
@@ -17,7 +19,11 @@ internal static class ImageSize
         try
         {
             var info = new FileInfo(path);
-            if (!info.Exists || info.Length < 26 || info.Length > 64L * 1024 * 1024) return false;
+
+            if (!info.Exists || info.Length < 26 || info.Length > 64L * 1024 * 1024)
+            {
+                return false;
+            }
 
             var bytes = File.ReadAllBytes(path);
 
@@ -33,7 +39,9 @@ internal static class ImageSize
             }
 
             if (bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+            {
                 return tryJpeg(bytes, out width, out height);
+            }
 
             return false;
         }
@@ -44,21 +52,40 @@ internal static class ImageSize
         }
     }
 
-    private static bool tryJpeg(byte[] bytes, out int width, out int height)
+    static bool tryJpeg(byte[] bytes,
+                        out int width,
+                        out int height)
     {
         width = 0;
         height = 0;
 
         var i = 2;
+
         while (i + 8 < bytes.Length)
         {
-            if (bytes[i] != 0xFF) { i++; continue; }
+            if (bytes[i] != 0xFF)
+            {
+                i++;
+
+                continue;
+            }
 
             var marker = bytes[i + 1];
-            if (marker == 0xFF || marker == 0x00) { i++; continue; }   // fill / stuffed byte
+
+            if (marker == 0xFF || marker == 0x00)
+            {
+                i++;
+
+                continue;
+            } // fill / stuffed byte
 
             // Markers that carry no payload: TEM and the RST/SOI/EOI block.
-            if (marker == 0x01 || marker is >= 0xD0 and <= 0xD9) { i += 2; continue; }
+            if (marker == 0x01 || marker is >= 0xD0 and <= 0xD9)
+            {
+                i += 2;
+
+                continue;
+            }
 
             // SOF0..SOF15 except DHT (C4), JPG (C8) and DAC (CC) hold the frame dimensions.
             if (marker is >= 0xC0 and <= 0xCF and not 0xC4 and not 0xC8 and not 0xCC)
@@ -70,7 +97,11 @@ internal static class ImageSize
             }
 
             var length = (bytes[i + 2] << 8) | bytes[i + 3];
-            if (length < 2) return false;   // corrupt length: no point scanning further
+
+            if (length < 2)
+            {
+                return false; // corrupt length: no point scanning further
+            }
 
             i += 2 + length;
         }
